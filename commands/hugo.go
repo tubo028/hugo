@@ -157,6 +157,7 @@ func LoadDefaultSettings() {
 	viper.SetDefault("DefaultExtension", "html")
 	viper.SetDefault("PygmentsUseClasses", false)
 	viper.SetDefault("PygmentsCodeFences", false)
+	viper.SetDefault("ExecWhitelist", []string{"cat", "type"})
 	viper.SetDefault("DisableLiveReload", false)
 	viper.SetDefault("PluralizeListTitles", true)
 	viper.SetDefault("PreserveTaxonomyNames", false)

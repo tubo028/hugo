@@ -1076,6 +1076,10 @@ func Highlight(in interface{}, lang, opts string) template.HTML {
 	return template.HTML(helpers.Highlight(html.UnescapeString(str), lang, opts))
 }
 
+func Exec(com, args string) template.HTML {
+	return template.HTML(helpers.Exec(com, args))
+}
+
 var markdownTrimPrefix = []byte("<p>")
 var markdownTrimSuffix = []byte("</p>\n")
 
@@ -1397,6 +1401,7 @@ func init() {
 		"delimit":      Delimit,
 		"sort":         Sort,
 		"highlight":    Highlight,
+		"exec":         Exec,
 		"add":          func(a, b interface{}) (interface{}, error) { return doArithmetic(a, b, '+') },
 		"sub":          func(a, b interface{}) (interface{}, error) { return doArithmetic(a, b, '-') },
 		"div":          func(a, b interface{}) (interface{}, error) { return doArithmetic(a, b, '/') },
