@@ -456,6 +456,21 @@ Example: Given `style = "color: red;"` defined in the front matter of your `.md`
 Note: "ZgotmplZ" is a special value that indicates that unsafe content reached a
 CSS or URL context.
 
+### safeJS
+
+Declares the provided string as a known "safe" Javascript string so Go
+html/templates will not escape it.  "Safe" means the string encapsulates a known
+safe EcmaScript5 Expression, for example, `(x + y * z())`. Template authors
+are responsible for ensuring that typed expressions do not break the intended
+precedence and that there is no statement/expression ambiguity as when passing
+an expression like `{ foo:bar() }\n['foo']()`, which is both a valid Expression
+and a valid Program with a very different meaning.
+
+Example: Given `hash = "619c16f"` defined in the front matter of your `.md` file:
+
+* `<script>var form_{{ .Params.hash | safeJS }};…</script>` ⇒ `<script>var form_619c16f;…</script>` (Good!)
+* `<script>var form_{{ .Params.hash }};…</script>` ⇒ `<script>var form_"619c16f";…</script>` (Bad!)
+
 ### singularize
 Singularize the given word with a set of common English singularization rules.
 
@@ -700,6 +715,4 @@ responses of APIs.
     {{ $resp := getJSON "https://api.github.com/repos/spf13/hugo/readme"  }}
     {{ $resp.content | base64Decode | markdownify }}
 
- The response of the Github API contains the base64-encoded version of the [README.md](https://github.com/spf13/hugo/blob/master/README.md) in the Hugo repository.
-Now we can decode it and parse the Markdown. The final output will look similar to the
-rendered version in Github.
+The response of the GitHub API contains the base64-encoded version of the [README.md](https://github.com/spf13/hugo/blob/master/README.md) in the Hugo repository. Now we can decode it and parse the Markdown. The final output will look similar to the rendered version on GitHub.

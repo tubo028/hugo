@@ -1,9 +1,9 @@
 // Copyright © 2013-14 Steve Francia <spf@spf13.com>.
 //
-// Licensed under the Simple Public License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// http://opensource.org/licenses/Simple-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,7 +14,6 @@
 package tpl
 
 import (
-	"bitbucket.org/pkg/inflect"
 	"bytes"
 	"encoding/base64"
 	"errors"
@@ -27,6 +26,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"bitbucket.org/pkg/inflect"
 
 	"github.com/spf13/cast"
 	"github.com/spf13/hugo/helpers"
@@ -112,6 +113,11 @@ func compareGetFloat(a interface{}, b interface{}) (float64, float64) {
 			str := av.String()
 			leftStr = &str
 		}
+	case reflect.Struct:
+		switch av.Type() {
+		case timeType:
+			left = float64(timeUnix(av))
+		}
 	}
 
 	bv := reflect.ValueOf(b)
@@ -129,7 +135,11 @@ func compareGetFloat(a interface{}, b interface{}) (float64, float64) {
 			str := bv.String()
 			rightStr = &str
 		}
-
+	case reflect.Struct:
+		switch bv.Type() {
+		case timeType:
+			right = float64(timeUnix(bv))
+		}
 	}
 
 	switch {
@@ -1187,6 +1197,9 @@ func SafeURL(text string) template.URL {
 
 func SafeHTML(a string) template.HTML { return template.HTML(a) }
 
+// SafeJS returns the given string as a template.JS type from html/template.
+func SafeJS(a string) template.JS { return template.JS(a) }
+
 func doArithmetic(a, b interface{}, op rune) (interface{}, error) {
 	av := reflect.ValueOf(a)
 	bv := reflect.ValueOf(b)
@@ -1388,6 +1401,7 @@ func init() {
 		"echoParam":    ReturnWhenSet,
 		"safeHTML":     SafeHTML,
 		"safeCSS":      SafeCSS,
+		"safeJS":       SafeJS,
 		"safeURL":      SafeURL,
 		"absURL":       func(a string) template.HTML { return template.HTML(helpers.AbsURL(a)) },
 		"relURL":       func(a string) template.HTML { return template.HTML(helpers.RelURL(a)) },

@@ -1,9 +1,9 @@
 // Copyright © 2014 Steve Francia <spf@spf13.com>.
 //
-// Licensed under the Simple Public License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// http://opensource.org/licenses/Simple-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -450,37 +450,25 @@ func prettifyPath(in string, b filepathPathBridge) string {
 	return b.Join(b.Dir(in), name, "index"+ext)
 }
 
-// RemoveSubpaths takes a list of paths and removes everything that
-// contains another path in the list as a prefix. Ignores any empty
-// strings. Used mostly for logging.
-//
-// e.g. ["hello/world", "hello", "foo/bar", ""] -> ["hello", "foo/bar"]
-func RemoveSubpaths(paths []string) []string {
-	a := make([]string, 0)
-	for _, cur := range paths {
-		// ignore trivial case
-		if cur == "" {
-			continue
-		}
-
-		isDupe := false
-		for i, old := range a {
-			if strings.HasPrefix(cur, old) {
-				isDupe = true
-				break
-			} else if strings.HasPrefix(old, cur) {
-				a[i] = cur
-				isDupe = true
+// Extract the root paths from the supplied list of paths.
+// The resulting root path will not contain any file separators, but there
+// may be duplicates.
+// So "/content/section/" becomes "content"
+func ExtractRootPaths(paths []string) []string {
+	r := make([]string, len(paths))
+	for i, p := range paths {
+		root := filepath.ToSlash(p)
+		sections := strings.Split(root, "/")
+		for _, section := range sections {
+			if section != "" {
+				root = section
 				break
 			}
 		}
-
-		if !isDupe {
-			a = append(a, cur)
-		}
+		r[i] = root
 	}
+	return r
 
-	return a
 }
 
 // FindCWD returns the current working directory from where the Hugo

@@ -1,9 +1,9 @@
 // Copyright © 2013-2015 Steve Francia <spf@spf13.com>.
 //
-// Licensed under the Simple Public License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// http://opensource.org/licenses/Simple-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -86,9 +86,13 @@ func AddCommands() {
 	HugoCmd.AddCommand(newCmd)
 	HugoCmd.AddCommand(listCmd)
 	HugoCmd.AddCommand(undraftCmd)
-	HugoCmd.AddCommand(genautocompleteCmd)
-	HugoCmd.AddCommand(gendocCmd)
 	HugoCmd.AddCommand(importCmd)
+
+	HugoCmd.AddCommand(genCmd)
+	genCmd.AddCommand(genautocompleteCmd)
+	genCmd.AddCommand(gendocCmd)
+	genCmd.AddCommand(genmanCmd)
+
 }
 
 //Initializes flags
@@ -155,10 +159,11 @@ func LoadDefaultSettings() {
 	viper.SetDefault("Taxonomies", map[string]string{"tag": "tags", "category": "categories"})
 	viper.SetDefault("Permalinks", make(hugolib.PermalinkOverrides, 0))
 	viper.SetDefault("Sitemap", hugolib.Sitemap{Priority: -1})
-	viper.SetDefault("PygmentsStyle", "monokai")
 	viper.SetDefault("DefaultExtension", "html")
+	viper.SetDefault("PygmentsStyle", "monokai")
 	viper.SetDefault("PygmentsUseClasses", false)
 	viper.SetDefault("PygmentsCodeFences", false)
+	viper.SetDefault("PygmentsOptions", "")
 	viper.SetDefault("ExecWhitelist", []string{"cat", "type"})
 	viper.SetDefault("DisableLiveReload", false)
 	viper.SetDefault("PluralizeListTitles", true)

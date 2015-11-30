@@ -1,9 +1,9 @@
 // Copyright © 2013 Steve Francia <spf@spf13.com>.
 //
-// Licensed under the Simple Public License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// http://opensource.org/licenses/Simple-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -246,26 +246,10 @@ func (p *Page) renderContent(content []byte) []byte {
 func (p *Page) getRenderingConfig() *helpers.Blackfriday {
 
 	p.renderingConfigInit.Do(func() {
-		pageParam := p.GetParam("blackfriday")
-		siteParam := viper.GetStringMap("blackfriday")
+		pageParam := cast.ToStringMap(p.GetParam("blackfriday"))
 
-		combinedParam := siteParam
-
-		if pageParam != nil {
-			combinedParam = make(map[string]interface{})
-
-			for k, v := range siteParam {
-				combinedParam[k] = v
-			}
-
-			pageConfig := cast.ToStringMap(pageParam)
-
-			for key, value := range pageConfig {
-				combinedParam[key] = value
-			}
-		}
 		p.renderingConfig = helpers.NewBlackfriday()
-		if err := mapstructure.Decode(combinedParam, p.renderingConfig); err != nil {
+		if err := mapstructure.Decode(pageParam, p.renderingConfig); err != nil {
 			jww.FATAL.Printf("Failed to get rendering config for %s:\n%s", p.BaseFileName(), err.Error())
 		}
 	})

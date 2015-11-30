@@ -1,9 +1,9 @@
 // Copyright © 2013-14 Steve Francia <spf@spf13.com>.
 //
-// Licensed under the Simple Public License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// http://opensource.org/licenses/Simple-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -45,16 +45,18 @@ var serverCmd = &cobra.Command{
 	Use:     "server",
 	Aliases: []string{"serve"},
 	Short:   "A high performance webserver",
-	Long: `Hugo provides it's own webserver which builds and serves the site.
+	Long: `Hugo provides its own webserver which builds and serves the site.
 While hugo server is high performance, it is a webserver with limited options.
-Many run it in production, but the standard behavior is for people to use it in development
-and use a more full featured server such as Nginx or Caddy.
+Many run it in production, but the standard behavior is for people to use it
+in development and use a more full featured server such as Nginx or Caddy.
 
 'hugo server' will avoid writing the rendered and served content to disk,
 preferring to store it in memory.
 
-Often server is paired with '--watch' which Hugo will look for changes to the source and
-continously rebuild and serve the website.`,
+By default hugo will also watch your files for any changes you make and
+automatically rebuild the site. It will then live reload any open browser pages
+and push the latest content to them. As most Hugo sites are built in a fraction
+of a second, you will be able to save and see your changes nearly instantly.`,
 	//Run: server,
 }
 
@@ -81,7 +83,7 @@ func (f noDirFile) Readdir(count int) ([]os.FileInfo, error) {
 func init() {
 	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 1313, "port on which the server will listen")
 	serverCmd.Flags().StringVarP(&serverInterface, "bind", "", "127.0.0.1", "interface to which the server will bind")
-	serverCmd.Flags().BoolVarP(&serverWatch, "watch", "w", false, "watch filesystem for changes and recreate as needed")
+	serverCmd.Flags().BoolVarP(&serverWatch, "watch", "w", true, "watch filesystem for changes and recreate as needed")
 	serverCmd.Flags().BoolVarP(&serverAppend, "appendPort", "", true, "append port to baseurl")
 	serverCmd.Flags().BoolVar(&disableLiveReload, "disableLiveReload", false, "watch without enabling live browser reload on rebuild")
 	serverCmd.Flags().BoolVar(&renderToDisk, "renderToDisk", false, "render to Destination path (default is render to memory & serve from there)")
@@ -137,11 +139,6 @@ func server(cmd *cobra.Command, args []string) {
 		renderToDisk = true
 	}
 
-	if !renderToDisk && runtime.GOOS == "windows" {
-		jww.ERROR.Println("Render to memory currently not supported in Windows, see https://github.com/spf13/hugo/issues/1586")
-		renderToDisk = true
-	}
-
 	// Hugo writes the output to memory instead of the disk
 	if !renderToDisk {
 		hugofs.DestinationFS = new(afero.MemMapFs)
@@ -153,14 +150,15 @@ func server(cmd *cobra.Command, args []string) {
 
 	// Watch runs its own server as part of the routine
 	if serverWatch {
-		watched := getDirList()
-		workingDir := helpers.AbsPathify(viper.GetString("WorkingDir"))
-		for i, dir := range watched {
-			watched[i], _ = helpers.GetRelativePath(dir, workingDir)
+		watchDirs := getDirList()
+		baseWatchDir := helpers.AbsPathify(viper.GetString("WorkingDir"))
+		for i, dir := range watchDirs {
+			watchDirs[i], _ = helpers.GetRelativePath(dir, baseWatchDir)
 		}
-		unique := strings.Join(helpers.RemoveSubpaths(watched), ",")
 
-		jww.FEEDBACK.Printf("Watching for changes in %s/{%s}\n", workingDir, unique)
+		rootWatchDirs := strings.Join(helpers.UniqueStrings(helpers.ExtractRootPaths(watchDirs)), ",")
+
+		jww.FEEDBACK.Printf("Watching for changes in %s/{%s}\n", baseWatchDir, rootWatchDirs)
 		err := NewWatcher(serverPort)
 		if err != nil {
 			fmt.Println(err)

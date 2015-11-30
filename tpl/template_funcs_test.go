@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/spf13/cast"
 	"html/template"
 	"path"
 	"reflect"
@@ -81,6 +82,9 @@ func doTestCompare(t *testing.T, tp tstCompareType, funcUnderTest func(a, b inte
 		{"8", "5", 1},
 		{"5", "0001", 1},
 		{[]int{100, 99}, []int{1, 2, 3, 4}, -1},
+		{cast.ToTime("2015-11-20"), cast.ToTime("2015-11-20"), 0},
+		{cast.ToTime("2015-11-19"), cast.ToTime("2015-11-20"), -1},
+		{cast.ToTime("2015-11-20"), cast.ToTime("2015-11-19"), 1},
 	} {
 		result := funcUnderTest(this.left, this.right)
 		success := false
@@ -1572,6 +1576,41 @@ func TestSafeCSS(t *testing.T) {
 		}
 		if buf.String() != this.expectWithEscape {
 			t.Errorf("[%d] execute template with an escaped string value by SafeCSS, got %v but expected %v", i, buf.String(), this.expectWithEscape)
+		}
+	}
+}
+
+func TestSafeJS(t *testing.T) {
+	for i, this := range []struct {
+		str                 string
+		tmplStr             string
+		expectWithoutEscape string
+		expectWithEscape    string
+	}{
+		{`619c16f`, `<script>var x{{ . }};</script>`, `<script>var x"619c16f";</script>`, `<script>var x619c16f;</script>`},
+	} {
+		tmpl, err := template.New("test").Parse(this.tmplStr)
+		if err != nil {
+			t.Errorf("[%d] unable to create new html template %q: %s", i, this.tmplStr, err)
+			continue
+		}
+
+		buf := new(bytes.Buffer)
+		err = tmpl.Execute(buf, this.str)
+		if err != nil {
+			t.Errorf("[%d] execute template with a raw string value returns unexpected error: %s", i, err)
+		}
+		if buf.String() != this.expectWithoutEscape {
+			t.Errorf("[%d] execute template with a raw string value, got %v but expected %v", i, buf.String(), this.expectWithoutEscape)
+		}
+
+		buf.Reset()
+		err = tmpl.Execute(buf, SafeJS(this.str))
+		if err != nil {
+			t.Errorf("[%d] execute template with an escaped string value by SafeJS returns unexpected error: %s", i, err)
+		}
+		if buf.String() != this.expectWithEscape {
+			t.Errorf("[%d] execute template with an escaped string value by SafeJS, got %v but expected %v", i, buf.String(), this.expectWithEscape)
 		}
 	}
 }
