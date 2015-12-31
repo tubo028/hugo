@@ -1,4 +1,4 @@
-// Copyright © 2013-15 Steve Francia <spf@spf13.com>.
+// Copyright 2015 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,33 +21,44 @@ import (
 	"sort"
 )
 
-var config = &cobra.Command{
+var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Print the site configuration",
 	Long:  `Print the site configuration, both default and custom settings.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		InitializeConfig()
-		allSettings := viper.AllSettings()
+}
 
-		var separator string
-		if allSettings["metadataformat"] == "toml" {
-			separator = " = "
+func init() {
+	initCoreCommonFlags(configCmd)
+	configCmd.RunE = config
+}
+
+func config(cmd *cobra.Command, args []string) error {
+	if err := InitializeConfig(configCmd); err != nil {
+		return err
+	}
+
+	allSettings := viper.AllSettings()
+
+	var separator string
+	if allSettings["metadataformat"] == "toml" {
+		separator = " = "
+	} else {
+		separator = ": "
+	}
+
+	var keys []string
+	for k := range allSettings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		kv := reflect.ValueOf(allSettings[k])
+		if kv.Kind() == reflect.String {
+			fmt.Printf("%s%s\"%+v\"\n", k, separator, allSettings[k])
 		} else {
-			separator = ": "
+			fmt.Printf("%s%s%+v\n", k, separator, allSettings[k])
 		}
+	}
 
-		var keys []string
-		for k := range allSettings {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			kv := reflect.ValueOf(allSettings[k])
-			if kv.Kind() == reflect.String {
-				fmt.Printf("%s%s\"%+v\"\n", k, separator, allSettings[k])
-			} else {
-				fmt.Printf("%s%s%+v\n", k, separator, allSettings[k])
-			}
-		}
-	},
+	return nil
 }

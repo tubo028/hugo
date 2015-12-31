@@ -1,4 +1,4 @@
-// Copyright © 2013-14 Steve Francia <spf@spf13.com>.
+// Copyright 2015 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ By default hugo will also watch your files for any changes you make and
 automatically rebuild the site. It will then live reload any open browser pages
 and push the latest content to them. As most Hugo sites are built in a fraction
 of a second, you will be able to save and see your changes nearly instantly.`,
-	//Run: server,
+	//RunE: server,
 }
 
 type filesOnlyFs struct {
@@ -81,6 +81,7 @@ func (f noDirFile) Readdir(count int) ([]os.FileInfo, error) {
 }
 
 func init() {
+	initCoreCommonFlags(serverCmd)
 	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 1313, "port on which the server will listen")
 	serverCmd.Flags().StringVarP(&serverInterface, "bind", "", "127.0.0.1", "interface to which the server will bind")
 	serverCmd.Flags().BoolVarP(&serverWatch, "watch", "w", true, "watch filesystem for changes and recreate as needed")
@@ -90,11 +91,13 @@ func init() {
 	serverCmd.Flags().BoolVarP(&NoTimes, "noTimes", "", false, "Don't sync modification time of files")
 	serverCmd.Flags().String("memstats", "", "log memory usage to this file")
 	serverCmd.Flags().Int("meminterval", 100, "interval to poll memory usage (requires --memstats)")
-	serverCmd.Run = server
+	serverCmd.RunE = server
 }
 
-func server(cmd *cobra.Command, args []string) {
-	InitializeConfig()
+func server(cmd *cobra.Command, args []string) error {
+	if err := InitializeConfig(serverCmd); err != nil {
+		return err
+	}
 
 	if cmd.Flags().Lookup("disableLiveReload").Changed {
 		viper.Set("DisableLiveReload", disableLiveReload)
@@ -116,8 +119,7 @@ func server(cmd *cobra.Command, args []string) {
 		jww.ERROR.Println("port", serverPort, "already in use, attempting to use an available port")
 		sp, err := helpers.FindAvailablePort()
 		if err != nil {
-			jww.ERROR.Println("Unable to find alternative port to use")
-			jww.ERROR.Fatalln(err)
+			return newSystemError("Unable to find alternative port to use:", err)
 		}
 		serverPort = sp.Port
 	}
@@ -126,7 +128,7 @@ func server(cmd *cobra.Command, args []string) {
 
 	BaseURL, err := fixURL(BaseURL)
 	if err != nil {
-		jww.ERROR.Fatal(err)
+		return err
 	}
 	viper.Set("BaseURL", BaseURL)
 
@@ -146,26 +148,35 @@ func server(cmd *cobra.Command, args []string) {
 		viper.Set("PublishDir", "/")
 	}
 
-	build(serverWatch)
+	if serverCmd.Flags().Lookup("noTimes").Changed {
+		viper.Set("NoTimes", NoTimes)
+	}
+
+	if err := build(serverWatch); err != nil {
+		return err
+	}
 
 	// Watch runs its own server as part of the routine
 	if serverWatch {
 		watchDirs := getDirList()
-		baseWatchDir := helpers.AbsPathify(viper.GetString("WorkingDir"))
+		baseWatchDir := viper.GetString("WorkingDir")
 		for i, dir := range watchDirs {
 			watchDirs[i], _ = helpers.GetRelativePath(dir, baseWatchDir)
 		}
 
 		rootWatchDirs := strings.Join(helpers.UniqueStrings(helpers.ExtractRootPaths(watchDirs)), ",")
 
-		jww.FEEDBACK.Printf("Watching for changes in %s/{%s}\n", baseWatchDir, rootWatchDirs)
+		jww.FEEDBACK.Printf("Watching for changes in %s%s{%s}\n", baseWatchDir, helpers.FilePathSeparator, rootWatchDirs)
 		err := NewWatcher(serverPort)
+
 		if err != nil {
-			fmt.Println(err)
+			return err
 		}
 	}
 
 	serve(serverPort)
+
+	return nil
 }
 
 func serve(port int) {

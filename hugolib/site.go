@@ -1,4 +1,4 @@
-// Copyright © 2013-14 Steve Francia <spf@spf13.com>.
+// Copyright 2015 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -243,20 +244,34 @@ func (s *Site) Build() (err error) {
 	if err = s.Process(); err != nil {
 		return
 	}
+
 	if err = s.Render(); err != nil {
 		// Better reporting when the template is missing (commit 2bbecc7b)
-		jww.ERROR.Printf("Error rendering site: %s\nAvailable templates:\n", err)
+		jww.ERROR.Printf("Error rendering site: %s", err)
+
+		jww.ERROR.Printf("Available templates:")
+		var keys []string
 		for _, template := range s.Tmpl.Templates() {
-			jww.ERROR.Printf("\t%s\n", template.Name())
+			if name := template.Name(); name != "" {
+				keys = append(keys, name)
+			}
 		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			jww.ERROR.Printf("\t%s\n", k)
+		}
+
 		return
 	}
+
 	return nil
 }
 
-func (s *Site) Analyze() {
-	s.Process()
-	s.ShowPlan(os.Stdout)
+func (s *Site) Analyze() error {
+	if err := s.Process(); err != nil {
+		return err
+	}
+	return s.ShowPlan(os.Stdout)
 }
 
 func (s *Site) prepTemplates() {
@@ -734,7 +749,7 @@ func (s *SiteInfo) createNodeMenuEntryURL(in string) string {
 	}
 	// make it match the nodes
 	menuEntryURL := in
-	menuEntryURL = helpers.URLizeAndPrep(menuEntryURL)
+	menuEntryURL = helpers.SanitizeURLKeepTrailingSlash(helpers.URLize(menuEntryURL))
 	if !s.canonifyURLs {
 		menuEntryURL = helpers.AddContextRoot(string(s.BaseURL), menuEntryURL)
 	}
@@ -905,6 +920,26 @@ func (s *Site) RenderPages() error {
 
 	procs := getGoMaxProcs()
 
+	// this cannot be fanned out to multiple Go routines
+	// See issue #1601
+	// TODO(bep): Check the IsRenderable logic.
+	for _, p := range s.Pages {
+		var layouts []string
+		if !p.IsRenderable() {
+			self := "__" + p.TargetPath()
+			_, err := s.Tmpl.New(self).Parse(string(p.Content))
+			if err != nil {
+				results <- err
+				continue
+			}
+			layouts = append(layouts, self)
+		} else {
+			layouts = append(layouts, p.layouts()...)
+			layouts = append(layouts, "_default/single.html")
+		}
+		p.layoutsCalculated = layouts
+	}
+
 	wg := &sync.WaitGroup{}
 
 	for i := 0; i < procs*4; i++ {
@@ -936,22 +971,7 @@ func (s *Site) RenderPages() error {
 func pageRenderer(s *Site, pages <-chan *Page, results chan<- error, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for p := range pages {
-		var layouts []string
-
-		if !p.IsRenderable() {
-			self := "__" + p.TargetPath()
-			_, err := s.Tmpl.New(self).Parse(string(p.Content))
-			if err != nil {
-				results <- err
-				continue
-			}
-			layouts = append(layouts, self)
-		} else {
-			layouts = append(layouts, p.layouts()...)
-			layouts = append(layouts, "_default/single.html")
-		}
-
-		err := s.renderAndWritePage("page "+p.FullFilePath(), p.TargetPath(), p, s.appendThemeTemplates(layouts)...)
+		err := s.renderAndWritePage("page "+p.FullFilePath(), p.TargetPath(), p, s.appendThemeTemplates(p.layouts())...)
 		if err != nil {
 			results <- err
 		}
@@ -1127,8 +1147,8 @@ func taxonomyRenderer(s *Site, taxes <-chan taxRenderInfo, results chan<- error,
 
 		if !viper.GetBool("DisableRSS") {
 			// XML Feed
-            rssuri := viper.GetString("RSSUri")
-			n.URL = s.permalinkStr(base + "/" + rssuri )
+			rssuri := viper.GetString("RSSUri")
+			n.URL = s.permalinkStr(base + "/" + rssuri)
 			n.Permalink = s.permalink(base)
 			rssLayouts := []string{"taxonomy/" + t.singular + ".rss.xml", "_default/rss.xml", "rss.xml", "_internal/_default/rss.xml"}
 
@@ -1234,7 +1254,7 @@ func (s *Site) RenderSectionLists() error {
 
 		if !viper.GetBool("DisableRSS") && section != "" {
 			// XML Feed
-            rssuri := viper.GetString("RSSUri")
+			rssuri := viper.GetString("RSSUri")
 			n.URL = s.permalinkStr(section + "/" + rssuri)
 			n.Permalink = s.permalink(section)
 			rssLayouts := []string{"section/" + section + ".rss.xml", "_default/rss.xml", "rss.xml", "_internal/_default/rss.xml"}
@@ -1477,6 +1497,20 @@ func (s *Site) renderAndWritePage(name string, dest string, d interface{}, layou
 
 	transformer := transform.NewChain(transformLinks...)
 	transformer.Apply(outBuffer, renderBuffer, path)
+
+	if outBuffer.Len() == 0 {
+		jww.WARN.Printf("%q is rendered empty\n", dest)
+		if dest == "/" {
+			jww.ERROR.Println("=============================================================")
+			jww.ERROR.Println("Your rendered home page is blank: /index.html is zero-length")
+			jww.ERROR.Println(" * Did you specify a theme on the command-line or in your")
+			jww.ERROR.Printf("   %q file?  (Current theme: %q)\n", filepath.Base(viper.ConfigFileUsed()), viper.GetString("Theme"))
+			if !viper.GetBool("Verbose") {
+				jww.ERROR.Println(" * For more debugging information, run \"hugo -v\"")
+			}
+			jww.ERROR.Println("=============================================================")
+		}
+	}
 
 	if err == nil {
 		if err = s.WriteDestPage(dest, outBuffer); err != nil {

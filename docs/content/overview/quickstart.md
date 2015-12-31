@@ -99,7 +99,8 @@ Hugo contains its own high-performance web server. Simply run `hugo
 server` and Hugo will find an available port and run a server with
 your content:
 
-    $ 2 of 2 drafts rendered
+    $ hugo server --theme=hyde --buildDrafts
+    2 of 2 drafts rendered
     0 future content
     2 pages created
     0 paginator pages created
@@ -152,7 +153,7 @@ you can look at the browser in most cases.
 
 Change and save this file. Notice what happened in your terminal:
 
-    $ Change detected, rebuilding site
+    Change detected, rebuilding site
     2015-11-27 15:13 +0100
     2 of 2 drafts rendered
     0 future content

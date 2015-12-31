@@ -50,6 +50,7 @@ matter, content or derived from file location.
 **.ReadingTime** The estimated time it takes to read the content in minutes.<br>
 **.Weight** Assigned weight (in the front matter) to this content, used in sorting.<br>
 **.RawContent** Raw Markdown content without the metadata header. Useful with [remarkjs.com](http://remarkjs.com)<br>
+**.Draft** A boolean, `true` if the content is marked as a draft in the front matter.<br>
 **.IsNode** Always false for pages.<br>
 **.IsPage** Always true for page.<br>
 **.Site** See [Site Variables]({{< relref "#site-variables" >}}) below.<br>
@@ -58,7 +59,7 @@ matter, content or derived from file location.
 ## Page Params
 
 Any other value defined in the front matter, including taxonomies, will be made available under `.Params`.
-Take for example I'm using *tags* and *categories* as my taxonomies. The following would be how I would access them:
+For example, the *tags* and *categories* taxonomies are accessed with:
 
 * **.Params.tags**
 * **.Params.categories**
@@ -88,6 +89,7 @@ includes taxonomies, lists and the homepage.
 **.RelRef(ref)** Returns the relative permalink for `ref`. See [cross-references]({{% ref "extras/crossreferences.md" %}}). Does not handle in-page fragments correctly.<br>
 **.RSSLink** Link to the taxonomies' RSS link.<br>
 **.Data** The data specific to this type of node.<br>
+**.IsHome** True if the node is the site home page.<br>
 **.IsNode** Always true for nodes.<br>
 **.IsPage** Always false for nodes.<br>
 **.Site** See [Site Variables]({{< relref "#site-variables" >}}) below.<br>

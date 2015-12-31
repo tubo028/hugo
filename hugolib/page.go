@@ -1,4 +1,4 @@
-// Copyright © 2013 Steve Francia <spf@spf13.com>.
+// Copyright 2015 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -66,6 +66,7 @@ type Page struct {
 	contentType         string
 	renderable          bool
 	Layout              string
+	layoutsCalculated   []string
 	linkTitle           string
 	frontmatter         []byte
 	rawContent          []byte
@@ -288,6 +289,10 @@ func (p *Page) Section() string {
 }
 
 func (p *Page) layouts(l ...string) []string {
+	if len(p.layoutsCalculated) > 0 {
+		return p.layoutsCalculated
+	}
+
 	if p.Layout != "" {
 		return layouts(p.Type(), p.Layout)
 	}
@@ -491,6 +496,7 @@ func (p *Page) update(f interface{}) error {
 			p.linkTitle = cast.ToString(v)
 		case "description":
 			p.Description = cast.ToString(v)
+			p.Params["description"] = p.Description
 		case "slug":
 			p.Slug = cast.ToString(v)
 		case "url":

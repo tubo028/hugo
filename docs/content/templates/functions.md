@@ -51,8 +51,8 @@ e.g.
     // Outputs Tags: tag1, tag2 and tag3
 
 ### dict
-Creates a dictionary (map[string, interface{}), expects parameters added in value:object fasion.
-Invalid combinations like keys that are not strings or uneven number of parameters, will result in an exception thrown
+Creates a dictionary `(map[string, interface{})`, expects parameters added in value:object fasion.
+Invalid combinations like keys that are not strings or uneven number of parameters, will result in an exception thrown.
 Useful for passing maps to partials when adding to a template.
 
 e.g. Pass into "foo.html" a map with the keys "important, content" 
@@ -161,7 +161,7 @@ e.g.
     <ul>
     {{ $page_link := .Permalink }}
     {{ $tags := .Params.tags }}
-    {{ range .Site.Recent }}
+    {{ range .Site.Pages }}
         {{ $page := . }}
         {{ $has_common_tags := intersect $tags .Params.tags | len | lt 0 }}
         {{ if and $has_common_tags (ne $page_link $page.Permalink) }}
@@ -259,7 +259,7 @@ e.g.
     series: golang
     +++
 
-    {{ range where .Site.Recent "Params.series" "golang" }}
+    {{ range where .Site.Pages "Params.series" "golang" }}
        {{ .Content }}
     {{ end }}
 
@@ -362,14 +362,14 @@ e.g.
 ### chomp
 Removes any trailing newline characters. Useful in a pipeline to remove newlines added by other processing (including `markdownify`).
 
-e.g., `{{chomp "<p>Blockhead</p>\n"` → `"<p>Blockhead</p>"`
+e.g., `{{chomp "<p>Blockhead</p>\n"}}` → `"<p>Blockhead</p>"`
 
 
 ### dateFormat
 Converts the textual representation of the datetime into the other form or returns it of Go `time.Time` type value.
 These are formatted with the layout string.
 
-e.g. `{{ dateFormat "Monday, Jan 2, 2006" "2015-01-21" }}` →"Wednesday, Jan 21, 2015"
+e.g. `{{ dateFormat "Monday, Jan 2, 2006" "2015-01-21" }}` → "Wednesday, Jan 21, 2015"
 
 
 ### highlight
