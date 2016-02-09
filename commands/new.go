@@ -30,21 +30,27 @@ import (
 	"github.com/spf13/viper"
 )
 
-var siteType string
-var configFormat string
-var contentType string
-var contentFormat string
-var contentFrontMatter string
+var (
+	configFormat       string
+	contentEditor      string
+	contentFormat      string
+	contentFrontMatter string
+	contentType        string
+	siteType           string
+)
 
 func init() {
 	newSiteCmd.Flags().StringVarP(&configFormat, "format", "f", "toml", "config & frontmatter format")
 	newSiteCmd.Flags().Bool("force", false, "Init inside non-empty directory")
 	newCmd.Flags().StringVarP(&configFormat, "format", "f", "toml", "frontmatter format")
 	newCmd.Flags().StringVarP(&contentType, "kind", "k", "", "Content type to create")
-	newCmd.PersistentFlags().StringVarP(&Source, "source", "s", "", "filesystem path to read files relative from")
+	newCmd.PersistentFlags().StringVarP(&source, "source", "s", "", "filesystem path to read files relative from")
 	newCmd.PersistentFlags().SetAnnotation("source", cobra.BashCompSubdirsInDir, []string{})
+	newCmd.Flags().StringVar(&contentEditor, "editor", "", "edit new content with this editor, if provided")
+
 	newCmd.AddCommand(newSiteCmd)
 	newCmd.AddCommand(newThemeCmd)
+
 }
 
 var newCmd = &cobra.Command{
@@ -85,8 +91,12 @@ func NewContent(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if cmd.Flags().Lookup("format").Changed {
+	if flagChanged(cmd.Flags(), "format") {
 		viper.Set("MetaDataFormat", configFormat)
+	}
+
+	if flagChanged(cmd.Flags(), "editor") {
+		viper.Set("NewContentEditor", contentEditor)
 	}
 
 	if len(args) < 1 {
@@ -176,8 +186,8 @@ func NewTheme(cmd *cobra.Command, args []string) error {
 		return newUserError("theme name needs to be provided")
 	}
 
-	createpath := helpers.AbsPathify(filepath.Join("themes", args[0]))
-	jww.INFO.Println("Creating theme at", createpath)
+	createpath := helpers.AbsPathify(filepath.Join(viper.GetString("themesDir"), args[0]))
+	jww.INFO.Println("creating theme at", createpath)
 
 	if x, _ := helpers.Exists(createpath, hugofs.SourceFs); x {
 		return newUserError(createpath, "already exists")

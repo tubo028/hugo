@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/hugo/hugofs"
 	"github.com/spf13/hugo/source"
 	"github.com/spf13/viper"
+	"reflect"
 )
 
 const SITEMAP_TEMPLATE = `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -68,6 +69,10 @@ func TestSitemapOutput(t *testing.T) {
 		t.Fatalf("Unable to RenderSitemap: %s", err)
 	}
 
+	if err := s.RenderRobotsTXT(); err != nil {
+		t.Fatalf("Unable to RenderRobotsTXT :%s", err)
+	}
+
 	sitemapFile, err := hugofs.DestinationFS.Open("sitemap.xml")
 
 	if err != nil {
@@ -78,4 +83,20 @@ func TestSitemapOutput(t *testing.T) {
 	if !bytes.HasPrefix(sitemap, []byte("<?xml")) {
 		t.Errorf("Sitemap file should start with <?xml. %s", sitemap)
 	}
+}
+
+func TestParseSitemap(t *testing.T) {
+	expected := Sitemap{Priority: 3.0, Filename: "doo.xml", ChangeFreq: "3"}
+	input := map[string]interface{}{
+		"changefreq": "3",
+		"priority":   3.0,
+		"filename":   "doo.xml",
+		"unknown":    "ignore",
+	}
+	result := parseSitemap(input)
+
+	if !reflect.DeepEqual(expected, result) {
+		t.Errorf("Got \n%v expected \n%v", result, expected)
+	}
+
 }

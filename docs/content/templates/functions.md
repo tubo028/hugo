@@ -1,6 +1,7 @@
 ---
 aliases:
 - /layout/functions/
+lastmod: 2015-09-20
 date: 2013-07-01
 linktitle: Functions
 toc: true
@@ -356,6 +357,15 @@ e.g.
 </tbody>
 </table>
 
+## Numbers
+
+### int
+
+Creates a `int`.
+
+e.g.
+
+* `{{int "123" }}` → 123
 
 ## Strings
 
@@ -375,6 +385,16 @@ e.g. `{{ dateFormat "Monday, Jan 2, 2006" "2015-01-21" }}` → "Wednesday, Jan 2
 ### highlight
 Takes a string of code and a language, uses Pygments to return the syntax highlighted code in HTML.
 Used in the [highlight shortcode](/extras/highlighting/).
+
+
+### humanize
+Humanize returns the humanized version of a string with the first letter capitalized.
+
+e.g.
+```
+{{humanize "my-first-post"}} → "My first post"
+{{humanize "myCamelPost"}} → "My camel post"
+```
 
 
 ### lower
@@ -487,6 +507,14 @@ e.g.
 * `{{slicestr "BatMan" 3}}` → "Man"
 * `{{slicestr "BatMan" 0 3}}` → "Bat"
 
+### string
+
+Creates a `string`.
+
+e.g.
+
+* `{{string "BatMan"}}` → "BatMan"
+
 ### substr
 
 Extracts parts of a string, beginning at the character at the specified
@@ -525,6 +553,26 @@ Converts all characters in string to uppercase.
 e.g. `{{upper "BatMan"}}` → "BATMAN"
 
 
+### countwords
+
+`countwords` tries to convert the passed content to a string and counts each word
+in it. The template functions works similar to [.WordCount]({{< relref "templates/variables.md#page-variables" >}}).
+
+```html
+{{ "Hugo is a static site generator." | countwords }}
+<!-- outputs a content length of 6 words.  -->
+```
+
+
+### countrunes
+
+Alternatively to counting all words , `countrunes` determines the number  of runes in the content and excludes any whitespace. This can become useful if you have to deal with
+CJK-like languages.
+
+```html
+{{ "Hello, 世界" | countrunes }}
+<!-- outputs a content length of 8 runes. -->
+```
 
 
 ## URLs

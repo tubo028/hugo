@@ -19,9 +19,11 @@ import (
 	"runtime/pprof"
 )
 
-var cpuProfilefile string
-var memProfilefile string
-var benchmarkTimes int
+var (
+	benchmarkTimes int
+	cpuProfilefile string
+	memProfilefile string
+)
 
 var benchmarkCmd = &cobra.Command{
 	Use:   "benchmark",
@@ -31,7 +33,8 @@ creating a benchmark.`,
 }
 
 func init() {
-	initCoreCommonFlags(benchmarkCmd)
+	initHugoBuilderFlags(benchmarkCmd)
+	initBenchmarkBuildingFlags(benchmarkCmd)
 
 	benchmarkCmd.Flags().StringVar(&cpuProfilefile, "cpuprofile", "", "path/filename for the CPU profile file")
 	benchmarkCmd.Flags().StringVar(&memProfilefile, "memprofile", "", "path/filename for the memory profile file")
@@ -53,6 +56,7 @@ func benchmark(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		for i := 0; i < benchmarkTimes; i++ {
+			mainSite = nil
 			_ = buildSite()
 		}
 		pprof.WriteHeapProfile(f)
@@ -71,6 +75,7 @@ func benchmark(cmd *cobra.Command, args []string) error {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 		for i := 0; i < benchmarkTimes; i++ {
+			mainSite = nil
 			_ = buildSite()
 		}
 	}
