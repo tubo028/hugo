@@ -33,24 +33,26 @@ matter, content or derived from file location.
 **.Description** The description for the content.<br>
 **.Keywords** The meta keywords for this content.<br>
 **.Date** The date the content is associated with.<br>
+**.Lastmod** The date the content was last modified.<br>
 **.PublishDate** The date the content is published on.<br>
+**.ExpiryDate** The date where the content is scheduled to expire on.<br>
 **.Type** The content [type](/content/types/) (e.g. post).<br>
 **.Section** The [section](/content/sections/) this content belongs to.<br>
 **.Permalink** The Permanent link for this page.<br>
 **.RelPermalink** The Relative permanent link for this page.<br>
 **.LinkTitle** Access when creating links to this content. Will use `linktitle` if set in front matter, else `title`.<br>
-**.Taxonomies** These will use the field name of the plural form of the taxonomy (see tags and categories below).<br>
 **.RSSLink** Link to the taxonomies' RSS link.<br>
 **.TableOfContents** The rendered table of contents for this content.<br>
 **.Prev** Pointer to the previous content (based on pub date).<br>
 **.Next** Pointer to the following content (based on pub date).<br>
-**.PrevInSection** Pointer to the previous content within the same section (based on pub date)<br>
+**.PrevInSection** Pointer to the previous content within the same section (based on pub date). For example, `{{if .PrevInSection}}{{.PrevInSection.Permalink}}{{end}}`.<br>
 **.NextInSection** Pointer to the following content within the same section (based on pub date)<br>
 **.FuzzyWordCount** The approximate number of words in the content.<br>
 **.WordCount** The number of words in the content.<br>
 **.ReadingTime** The estimated time it takes to read the content in minutes.<br>
 **.Weight** Assigned weight (in the front matter) to this content, used in sorting.<br>
 **.RawContent** Raw Markdown content without the metadata header. Useful with [remarkjs.com](http://remarkjs.com)<br>
+**.UniqueID** The MD5-checksum of the page's filename<br>
 **.Draft** A boolean, `true` if the content is marked as a draft in the front matter.<br>
 **.IsNode** Always false for pages.<br>
 **.IsPage** Always true for page.<br>
@@ -93,7 +95,7 @@ In Hugo you can declare params both for the site and the individual page.  A com
 With the `Param` method the most specific value will be selected for you, and it is safe to use it in any template (it's defined on both Page and Node):
 
 ```
-$.Param("image")
+$.Param "image"
 ```
 
 ## Node Variables
@@ -104,6 +106,7 @@ includes taxonomies, lists and the homepage.
 
 **.Title**  The title for the content.<br>
 **.Date** The date the content is published on.<br>
+**.Lastmod** The date the content was last modified.<br>
 **.Permalink** The Permanent link for this node<br>
 **.URL** The relative URL for this node.<br>
 **.Ref(ref)** Returns the permalink for `ref`. See [cross-references]({{% ref "extras/crossreferences.md" %}}). Does not handle in-page fragments correctly.<br>
@@ -158,11 +161,25 @@ Also available is `.Site` which has the following:
 **.Site.BuildDrafts** A boolean (Default: false) to indicate whether to build drafts. Defined in the site configuration.<br>
 **.Site.Data**  Custom data, see [Data Files](/extras/datafiles/).<br>
 
+## File Variables
+
+The `.File` variable gives you additional information of a page.
+
+> **Note:** `.File` is only accessible on *Pages* but **not** on *Nodes* (like the homepage and list pages).
+
+Available are the following attributes:
+
+**.File.Path** The original relative path of the page, e.g. `content/posts/foo.md`<br>
+**.File.LogicalName** The name of the content file that represents a page, e.g. `foo.md`<br>
+**.File.BaseFileName** The filename without extension, e.g. `foo`<br>
+**.File.Ext** or **.File.Extension** The file extension of the content file, e.g. `md`<br>
+**.File.Dir** Given the path `content/posts/dir1/dir2/`, the relative directory path of the content file will be returned, e.g. `posts/dir1/dir2/`<br>
+
 ## Hugo Variables
 
 Also available is `.Hugo` which has the following:
 
-**.Hugo.Generator** Meta tag for the version of Hugo that generated the site. Highly recommended to be included by default in all theme headers so we can start to track Hugo usage and popularity. e.g. `<meta name="generator" content="Hugo 0.13" />`<br>
+**.Hugo.Generator** Meta tag for the version of Hugo that generated the site. Highly recommended to be included by default in all theme headers so we can start to track the usage and popularity of Hugo. Unlike other variables it outputs a **complete** HTML tag, e.g. `<meta name="generator" content="Hugo 0.15" />`<br>
 **.Hugo.Version** The current version of the Hugo binary you are using e.g. `0.13-DEV`<br>
 **.Hugo.CommitHash** The git commit hash of the current Hugo binary e.g. `0e8bed9ccffba0df554728b46c5bbf6d78ae5247`<br>
 **.Hugo.BuildDate** The compile date of the current Hugo binary formatted with RFC 3339 e.g. `2002-10-02T10:00:00-05:00`<br>

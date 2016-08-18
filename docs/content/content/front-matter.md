@@ -73,7 +73,7 @@ Content of the file goes Here
         "Development",
         "VIM"
     ],
-    "slug": "spf13-vim-3-0-release-and-new-website",
+    "slug": "spf13-vim-3-0-release-and-new-website"
 }
 
 Content of the file goes Here
@@ -100,6 +100,7 @@ Field names are always normalized to lowercase (e.g. `camelCase: true` is availa
               See [Aliases]({{< relref "extras/aliases.md" >}}) for details.
 * **draft** If true, the content will not be rendered unless `hugo` is called with `--buildDrafts`
 * **publishdate** If in the future, content will not be rendered unless `hugo` is called with `--buildFuture`
+* **expirydate** Content already expired will not be rendered unless `hugo` is called with `--buildExpired`
 * **type** The type of the content (will be derived from the directory automatically if unset)
 * **isCJKLanguage** If true, explicitly treat the content as CJKLanguage (.Summary and .WordCount can work properly in CJKLanguage)
 * **weight** Used for sorting

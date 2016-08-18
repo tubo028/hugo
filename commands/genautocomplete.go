@@ -34,7 +34,7 @@ NOTE: The current version supports Bash only.
 By default, the file is written directly to /etc/bash_completion.d
 for convenience, and the command may need superuser rights, e.g.:
 
-	$ sudo hugo genautocomplete
+	$ sudo hugo gen autocomplete
 
 Add ` + "`--completionfile=/path/to/file`" + ` flag to set alternative
 file-path and name.
@@ -53,9 +53,10 @@ or just source them in directly:
 
 		if err != nil {
 			return err
-		} else {
-			jww.FEEDBACK.Println("Bash completion file for Hugo saved to", autocompleteTarget)
 		}
+
+		jww.FEEDBACK.Println("Bash completion file for Hugo saved to", autocompleteTarget)
+
 		return nil
 	},
 }

@@ -1,8 +1,8 @@
 language: go
-sudo: false
+sudo: required
 go:
-  - 1.4.3
-  - 1.5.3
+  - 1.6.3
+  - 1.7
   - tip
 os:
   - linux
@@ -10,11 +10,12 @@ os:
 matrix:
   allow_failures:
     - go: tip
+  fast_finish: true
 script:
-  - go test ./...
-  - go build
+  - make check
+  - go build -race
   - ./hugo -s docs/
   - ./hugo --renderToMemory -s docs/
-install:
-  - go get github.com/stretchr/testify
-  - go get -v ./...
+before_install:
+  - gem install asciidoctor
+  - sudo pip install docutils

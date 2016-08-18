@@ -182,7 +182,7 @@ This shortcode embeds a responsive video player for [YouTube](https://www.youtub
 
 * https://www.youtube.com/watch?v=w7Ft2ymGmfc
 
-Copy the ID from behind `v=` and pass it the shortcode:
+Copy the ID from behind `v=` and pass it to the shortcode:
 
     {{</* youtube w7Ft2ymGmfc */>}}
 
@@ -210,6 +210,10 @@ Including code snippets with GitHub gists while writing a tutorial is common sit
 pass the owner and the ID of the gist to the shortcode:
 
     {{</* gist spf13 7896402 */>}}
+
+If the gist contains several files and you want to quote just one of them, you can pass the filename (quoted) as an optional third argument:
+
+    {{</* gist spf13 7896402 "img.html" */>}}
 
 ### Speaker Deck
 
@@ -272,6 +276,8 @@ such as `{{ if .IsNamedParams }}...{{ else }}...{{ end }}`.  See the
 `Single Flexible Example` below for an example.
 
 You can also use the variable `.Page` to access all the normal [Page Variables](/templates/variables/).
+
+A shortcodes can be nested. In a nested shortcode you can access the parent shortcode context with `.Parent`. This can be very useful for inheritance of common shortcode parameters from the root.
 
 ## Single Positional Example: youtube
 

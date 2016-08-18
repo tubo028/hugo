@@ -35,7 +35,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Filepath separator defined by os.Separator.
+// FilePathSeparator as defined by os.Separator.
 const FilePathSeparator = string(filepath.Separator)
 
 // FindAvailablePort returns an available and valid TCP port.
@@ -92,7 +92,7 @@ func FirstUpper(s string) string {
 
 // UniqueStrings returns a new slice with any duplicates removed.
 func UniqueStrings(s []string) []string {
-	unique := make([]string, 0)
+	var unique []string
 	set := map[string]interface{}{}
 	for _, val := range s {
 		if _, ok := set[val]; !ok {
@@ -128,16 +128,6 @@ func ReaderToString(lines io.Reader) string {
 	defer bp.PutBuffer(b)
 	b.ReadFrom(lines)
 	return b.String()
-}
-
-// StringToReader does the opposite of ReaderToString.
-func StringToReader(in string) io.Reader {
-	return strings.NewReader(in)
-}
-
-// BytesToReader does the opposite of ReaderToBytes.
-func BytesToReader(in []byte) io.Reader {
-	return bytes.NewReader(in)
 }
 
 // ReaderContains reports whether subslice is within r.
@@ -230,13 +220,13 @@ func NewDistinctErrorLogger() *DistinctLogger {
 	return &DistinctLogger{m: make(map[string]bool), logger: jww.ERROR}
 }
 
-// NewDistinctErrorLogger creates a new DistinctLogger that can be used
+// NewDistinctFeedbackLogger creates a new DistinctLogger that can be used
 // to give feedback to the user while not spamming with duplicates.
 func NewDistinctFeedbackLogger() *DistinctLogger {
 	return &DistinctLogger{m: make(map[string]bool), logger: &jww.FEEDBACK}
 }
 
-// Avoid spamming the logs with errors
+// DistinctErrorLog cann be used to avoid spamming the logs with errors.
 var DistinctErrorLog = NewDistinctErrorLogger()
 
 // Deprecated logs ERROR logs about a deprecation, but only once for a given set of arguments' values.
@@ -328,7 +318,7 @@ func Seq(args ...interface{}) ([]int, error) {
 	if last < -100000 {
 		return nil, errors.New("size of result exeeds limit")
 	}
-	size := int(((last - first) / inc) + 1)
+	size := ((last - first) / inc) + 1
 
 	// sanity check
 	if size <= 0 || size > 2000 {
@@ -430,9 +420,8 @@ func DoArithmetic(a, b interface{}, op rune) (interface{}, error) {
 			return af + bf, nil
 		} else if au != 0 || bu != 0 {
 			return au + bu, nil
-		} else {
-			return 0, nil
 		}
+		return 0, nil
 	case '-':
 		if ai != 0 || bi != 0 {
 			return ai - bi, nil
@@ -440,9 +429,8 @@ func DoArithmetic(a, b interface{}, op rune) (interface{}, error) {
 			return af - bf, nil
 		} else if au != 0 || bu != 0 {
 			return au - bu, nil
-		} else {
-			return 0, nil
 		}
+		return 0, nil
 	case '*':
 		if ai != 0 || bi != 0 {
 			return ai * bi, nil
@@ -450,9 +438,8 @@ func DoArithmetic(a, b interface{}, op rune) (interface{}, error) {
 			return af * bf, nil
 		} else if au != 0 || bu != 0 {
 			return au * bu, nil
-		} else {
-			return 0, nil
 		}
+		return 0, nil
 	case '/':
 		if bi != 0 {
 			return ai / bi, nil
@@ -460,9 +447,8 @@ func DoArithmetic(a, b interface{}, op rune) (interface{}, error) {
 			return af / bf, nil
 		} else if bu != 0 {
 			return au / bu, nil
-		} else {
-			return nil, errors.New("Can't divide the value by 0")
 		}
+		return nil, errors.New("Can't divide the value by 0")
 	default:
 		return nil, errors.New("There is no such an operation")
 	}
@@ -480,4 +466,28 @@ func NormalizeHugoFlags(f *pflag.FlagSet, name string) pflag.NormalizedName {
 		break
 	}
 	return pflag.NormalizedName(name)
+}
+
+// DiffStringSlices returns the difference between two string slices.
+// Useful in tests.
+// See:
+// http://stackoverflow.com/questions/19374219/how-to-find-the-difference-between-two-slices-of-strings-in-golang
+func DiffStringSlices(slice1 []string, slice2 []string) []string {
+	diffStr := []string{}
+	m := map[string]int{}
+
+	for _, s1Val := range slice1 {
+		m[s1Val] = 1
+	}
+	for _, s2Val := range slice2 {
+		m[s2Val] = m[s2Val] + 1
+	}
+
+	for mKey, mVal := range m {
+		if mVal == 1 {
+			diffStr = append(diffStr, mKey)
+		}
+	}
+
+	return diffStr
 }

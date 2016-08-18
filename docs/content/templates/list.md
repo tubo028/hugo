@@ -188,6 +188,24 @@ your list templates:
     </li>
     {{ end }}
 
+### Order by ExpiryDate
+
+    {{ range .Data.Pages.ByExpiryDate }}
+    <li>
+    <a href="{{ .Permalink }}">{{ .Title }}</a>
+    <div class="meta">{{ .ExpiryDate.Format "Mon, Jan 2, 2006" }}</div>
+    </li>
+    {{ end }}
+    
+### Order by Lastmod
+
+    {{ range .Data.Pages.ByLastmod }}
+    <li>
+    <a href="{{ .Permalink }}">{{ .Title }}</a>
+    <div class="meta">{{ .Date.Format "Mon, Jan 2, 2006" }}</div>
+    </li>
+    {{ end }}
+
 ### Order by Length
 
     {{ range .Data.Pages.ByLength }}

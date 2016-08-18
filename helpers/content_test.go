@@ -55,7 +55,7 @@ func BenchmarkStripHTML(b *testing.B) {
 }
 
 func TestStripEmptyNav(t *testing.T) {
-	cleaned := StripEmptyNav([]byte("do<nav>\n</nav>\n\nbedobedo"))
+	cleaned := stripEmptyNav([]byte("do<nav>\n</nav>\n\nbedobedo"))
 	assert.Equal(t, []byte("dobedobedo"), cleaned)
 }
 
@@ -125,7 +125,7 @@ func TestTruncateWordsByRune(t *testing.T) {
 
 func TestGetHTMLRendererFlags(t *testing.T) {
 	ctx := &RenderingContext{}
-	renderer := GetHTMLRenderer(blackfriday.HTML_USE_XHTML, ctx)
+	renderer := getHTMLRenderer(blackfriday.HTML_USE_XHTML, ctx)
 	flags := renderer.GetFlags()
 	if flags&blackfriday.HTML_USE_XHTML != blackfriday.HTML_USE_XHTML {
 		t.Errorf("Test flag: %d was not found amongs set flags:%d; Result: %d", blackfriday.HTML_USE_XHTML, flags, flags&blackfriday.HTML_USE_XHTML)
@@ -158,7 +158,7 @@ func TestGetHTMLRendererAllFlags(t *testing.T) {
 	ctx.Config.SmartDashes = true
 	ctx.Config.Smartypants = true
 	ctx.Config.SourceRelativeLinksEval = true
-	renderer := GetHTMLRenderer(defaultFlags, ctx)
+	renderer := getHTMLRenderer(defaultFlags, ctx)
 	actualFlags := renderer.GetFlags()
 	var expectedFlags int
 	//OR-ing flags together...
@@ -176,7 +176,7 @@ func TestGetHTMLRendererAnchors(t *testing.T) {
 	ctx.Config = ctx.getConfig()
 	ctx.Config.PlainIDAnchors = false
 
-	actualRenderer := GetHTMLRenderer(0, ctx)
+	actualRenderer := getHTMLRenderer(0, ctx)
 	headerBuffer := &bytes.Buffer{}
 	footnoteBuffer := &bytes.Buffer{}
 	expectedFootnoteHref := []byte("href=\"#fn:testid:href\"")
@@ -194,12 +194,12 @@ func TestGetHTMLRendererAnchors(t *testing.T) {
 	}
 }
 
-func TestGetMmarkHtmlRenderer(t *testing.T) {
+func TestGetMmarkHTMLRenderer(t *testing.T) {
 	ctx := &RenderingContext{}
 	ctx.DocumentID = "testid"
 	ctx.Config = ctx.getConfig()
 	ctx.Config.PlainIDAnchors = false
-	actualRenderer := GetMmarkHtmlRenderer(0, ctx)
+	actualRenderer := getMmarkHTMLRenderer(0, ctx)
 
 	headerBuffer := &bytes.Buffer{}
 	footnoteBuffer := &bytes.Buffer{}
@@ -244,10 +244,16 @@ func TestGetMarkdownExtensionsByDefaultAllExtensionsAreEnabled(t *testing.T) {
 		{blackfriday.EXTENSION_FENCED_CODE},
 		{blackfriday.EXTENSION_AUTOLINK},
 		{blackfriday.EXTENSION_STRIKETHROUGH},
+		// {blackfriday.EXTENSION_LAX_HTML_BLOCKS},
 		{blackfriday.EXTENSION_SPACE_HEADERS},
+		// {blackfriday.EXTENSION_HARD_LINE_BREAK},
+		// {blackfriday.EXTENSION_TAB_SIZE_EIGHT},
 		{blackfriday.EXTENSION_FOOTNOTES},
+		// {blackfriday.EXTENSION_NO_EMPTY_LINE_BEFORE_BLOCK},
 		{blackfriday.EXTENSION_HEADER_IDS},
+		// {blackfriday.EXTENSION_TITLEBLOCK},
 		{blackfriday.EXTENSION_AUTO_HEADER_IDS},
+		{blackfriday.EXTENSION_BACKSLASH_LINE_BREAK},
 		{blackfriday.EXTENSION_DEFINITION_LISTS},
 	}
 
@@ -283,10 +289,10 @@ func TestGetMarkdownRenderer(t *testing.T) {
 }
 
 func TestGetMarkdownRendererWithTOC(t *testing.T) {
-	ctx := &RenderingContext{}
+	ctx := &RenderingContext{RenderTOC: true}
 	ctx.Content = []byte("testContent")
 	ctx.Config = ctx.getConfig()
-	actualRenderedMarkdown := markdownRenderWithTOC(ctx)
+	actualRenderedMarkdown := markdownRender(ctx)
 	expectedRenderedMarkdown := []byte("<nav>\n</nav>\n\n<p>testContent</p>\n")
 	if !bytes.Equal(actualRenderedMarkdown, expectedRenderedMarkdown) {
 		t.Errorf("Actual rendered Markdown (%s) did not match expected markdown (%s)", actualRenderedMarkdown, expectedRenderedMarkdown)
@@ -318,7 +324,7 @@ func TestGetMmarkExtensions(t *testing.T) {
 		{mmark.EXTENSION_INCLUDE},
 	}
 
-	actualFlags := GetMmarkExtensions(ctx)
+	actualFlags := getMmarkExtensions(ctx)
 	for _, e := range allExtensions {
 		if actualFlags&e.testFlag != e.testFlag {
 			t.Errorf("Flag %v was not found in the list of extensions.", e)
@@ -330,7 +336,7 @@ func TestMmarkRender(t *testing.T) {
 	ctx := &RenderingContext{}
 	ctx.Content = []byte("testContent")
 	ctx.Config = ctx.getConfig()
-	actualRenderedMarkdown := MmarkRender(ctx)
+	actualRenderedMarkdown := mmarkRender(ctx)
 	expectedRenderedMarkdown := []byte("<p>testContent</p>\n")
 	if !bytes.Equal(actualRenderedMarkdown, expectedRenderedMarkdown) {
 		t.Errorf("Actual rendered Markdown (%s) did not match expected markdown (%s)", actualRenderedMarkdown, expectedRenderedMarkdown)
@@ -354,7 +360,7 @@ func TestExtractTOCNormalContent(t *testing.T) {
 }
 
 func TestExtractTOCGreaterThanSeventy(t *testing.T) {
-	content := []byte("<nav>\n<ul>\nTOC This is a very long content which will definitly be greater than seventy, I promise you that.<li><a href=\"#")
+	content := []byte("<nav>\n<ul>\nTOC This is a very long content which will definitely be greater than seventy, I promise you that.<li><a href=\"#")
 
 	actualTocLessContent, actualToc := ExtractTOC(content)
 	//Because the start of Toc is greater than 70+startpoint of <li> content and empty TOC will be returned

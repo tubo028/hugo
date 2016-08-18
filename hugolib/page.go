@@ -1,4 +1,4 @@
-// Copyright 2015 The Hugo Authors. All rights reserved.
+// Copyright 2016 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -59,7 +59,7 @@ type Page struct {
 	Truncated           bool
 	Draft               bool
 	PublishDate         time.Time
-	Tmpl                tpl.Template
+	ExpiryDate          time.Time
 	Markup              string
 	extension           string
 	contentType         string
@@ -69,11 +69,11 @@ type Page struct {
 	linkTitle           string
 	frontmatter         []byte
 	rawContent          []byte
-	contentShortCodes   map[string]string
+	contentShortCodes   map[string]string // TODO(bep) this shouldn't be needed.
+	shortcodes          map[string]shortcode
 	plain               string // TODO should be []byte
 	plainWords          []string
 	plainInit           sync.Once
-	plainSecondaryInit  sync.Once
 	renderingConfig     *helpers.Blackfriday
 	renderingConfigInit sync.Once
 	pageMenus           PageMenus
@@ -83,6 +83,7 @@ type Page struct {
 	Source
 	Position `json:"-"`
 	Node
+	rendered bool
 }
 
 type Source struct {
@@ -257,14 +258,14 @@ func (p *Page) renderBytes(content []byte) []byte {
 	var fileFn helpers.FileResolverFunc
 	if p.getRenderingConfig().SourceRelativeLinksEval {
 		fn = func(ref string) (string, error) {
-			return p.Node.Site.GitHub(ref, p)
+			return p.Node.Site.SourceRelativeLink(ref, p)
 		}
 		fileFn = func(ref string) (string, error) {
-			return p.Node.Site.GitHubFileLink(ref, p)
+			return p.Node.Site.SourceRelativeLinkFile(ref, p)
 		}
 	}
 	return helpers.RenderBytes(
-		&helpers.RenderingContext{Content: content, PageFmt: p.guessMarkupType(),
+		&helpers.RenderingContext{Content: content, PageFmt: p.determineMarkupType(),
 			DocumentID: p.UniqueID(), Config: p.getRenderingConfig(), LinkResolver: fn, FileResolver: fileFn})
 }
 
@@ -273,13 +274,13 @@ func (p *Page) renderContent(content []byte) []byte {
 	var fileFn helpers.FileResolverFunc
 	if p.getRenderingConfig().SourceRelativeLinksEval {
 		fn = func(ref string) (string, error) {
-			return p.Node.Site.GitHub(ref, p)
+			return p.Node.Site.SourceRelativeLink(ref, p)
 		}
 		fileFn = func(ref string) (string, error) {
-			return p.Node.Site.GitHubFileLink(ref, p)
+			return p.Node.Site.SourceRelativeLinkFile(ref, p)
 		}
 	}
-	return helpers.RenderBytesWithTOC(&helpers.RenderingContext{Content: content, PageFmt: p.guessMarkupType(),
+	return helpers.RenderBytes(&helpers.RenderingContext{Content: content, RenderTOC: true, PageFmt: p.determineMarkupType(),
 		DocumentID: p.UniqueID(), Config: p.getRenderingConfig(), LinkResolver: fn, FileResolver: fileFn})
 }
 
@@ -412,12 +413,12 @@ func (p *Page) analyzePage() {
 		p.WordCount = len(p.PlainWords())
 	}
 
-	p.FuzzyWordCount = int((p.WordCount+100)/100) * 100
+	p.FuzzyWordCount = (p.WordCount + 100) / 100 * 100
 
 	if p.isCJKLanguage {
-		p.ReadingTime = int((p.WordCount + 500) / 501)
+		p.ReadingTime = (p.WordCount + 500) / 501
 	} else {
-		p.ReadingTime = int((p.WordCount + 212) / 213)
+		p.ReadingTime = (p.WordCount + 212) / 213
 	}
 }
 
@@ -466,13 +467,23 @@ func (p *Page) LinkTitle() string {
 	return p.Title
 }
 
-func (p *Page) ShouldBuild() bool {
-	if viper.GetBool("BuildFuture") || p.PublishDate.IsZero() || p.PublishDate.Before(time.Now()) {
-		if viper.GetBool("BuildDrafts") || !p.Draft {
-			return true
-		}
+func (p *Page) shouldBuild() bool {
+	return shouldBuild(viper.GetBool("BuildFuture"), viper.GetBool("BuildExpired"),
+		viper.GetBool("BuildDrafts"), p.Draft, p.PublishDate, p.ExpiryDate)
+}
+
+func shouldBuild(buildFuture bool, buildExpired bool, buildDrafts bool, Draft bool,
+	publishDate time.Time, expiryDate time.Time) bool {
+	if !(buildDrafts || !Draft) {
+		return false
 	}
-	return false
+	if !buildFuture && !publishDate.IsZero() && publishDate.After(time.Now()) {
+		return false
+	}
+	if !buildExpired && !expiryDate.IsZero() && expiryDate.Before(time.Now()) {
+		return false
+	}
+	return true
 }
 
 func (p *Page) IsDraft() bool {
@@ -480,10 +491,17 @@ func (p *Page) IsDraft() bool {
 }
 
 func (p *Page) IsFuture() bool {
-	if p.PublishDate.Before(time.Now()) {
+	if p.PublishDate.IsZero() {
 		return false
 	}
-	return true
+	return p.PublishDate.After(time.Now())
+}
+
+func (p *Page) IsExpired() bool {
+	if p.ExpiryDate.IsZero() {
+		return false
+	}
+	return p.ExpiryDate.Before(time.Now())
 }
 
 func (p *Page) Permalink() (string, error) {
@@ -564,6 +582,11 @@ func (p *Page) update(f interface{}) error {
 			if err != nil {
 				jww.ERROR.Printf("Failed to parse publishdate '%v' in page %s", v, p.File.Path())
 			}
+		case "expirydate", "unpublishdate":
+			p.ExpiryDate, err = cast.ToTimeE(v)
+			if err != nil {
+				jww.ERROR.Printf("Failed to parse expirydate '%v' in page %s", v, p.File.Path())
+			}
 		case "draft":
 			draft = new(bool)
 			*draft = cast.ToBool(v)
@@ -640,6 +663,13 @@ func (p *Page) update(f interface{}) error {
 		p.Draft = !*published
 	}
 
+	if p.Date.IsZero() && viper.GetBool("UseModTimeAsFallback") {
+		fi, err := hugofs.Source().Stat(filepath.Join(helpers.AbsPathify(viper.GetString("ContentDir")), p.File.Path()))
+		if err == nil {
+			p.Date = fi.ModTime()
+		}
+	}
+
 	if p.Lastmod.IsZero() {
 		p.Lastmod = p.Date
 	}
@@ -671,26 +701,26 @@ func (p *Page) getParam(key string, stringToLower bool) interface{} {
 
 	switch v.(type) {
 	case bool:
-		return cast.ToBool(v)
-	case string:
-		if stringToLower {
-			return strings.ToLower(cast.ToString(v))
-		}
-		return cast.ToString(v)
+		return v
+	case time.Time:
+		return v
 	case int64, int32, int16, int8, int:
 		return cast.ToInt(v)
 	case float64, float32:
 		return cast.ToFloat64(v)
-	case time.Time:
-		return cast.ToTime(v)
+	case map[string]interface{}: // JSON and TOML
+		return v
+	case map[interface{}]interface{}: // YAML
+		return v
+	case string:
+		if stringToLower {
+			return strings.ToLower(v.(string))
+		}
+		return v
 	case []string:
 		if stringToLower {
 			return helpers.SliceToLower(v.([]string))
 		}
-		return v.([]string)
-	case map[string]interface{}: // JSON and TOML
-		return v
-	case map[interface{}]interface{}: // YAML
 		return v
 	}
 
@@ -759,8 +789,8 @@ func (p *Page) Menus() PageMenus {
 				for _, mname := range mnames {
 					me.Menu = mname
 					p.pageMenus[mname] = &me
-					return
 				}
+				return
 			}
 
 			// Could be a structured menu entry
@@ -772,14 +802,15 @@ func (p *Page) Menus() PageMenus {
 
 			for name, menu := range menus {
 				menuEntry := MenuEntry{Name: p.LinkTitle(), URL: link, Weight: p.Weight, Menu: name}
-				jww.DEBUG.Printf("found menu: %q, in %q\n", name, p.Title)
+				if menu != nil {
+					jww.DEBUG.Printf("found menu: %q, in %q\n", name, p.Title)
+					ime, err := cast.ToStringMapE(menu)
+					if err != nil {
+						jww.ERROR.Printf("unable to process menus for %q: %s", p.Title, err)
+					}
 
-				ime, err := cast.ToStringMapE(menu)
-				if err != nil {
-					jww.ERROR.Printf("unable to process menus for %q\n", p.Title)
+					menuEntry.marshallMap(ime)
 				}
-
-				menuEntry.MarshallMap(ime)
 				p.pageMenus[name] = &menuEntry
 			}
 		}
@@ -800,20 +831,15 @@ func (p *Page) Render(layout ...string) template.HTML {
 	return tpl.ExecuteTemplateToHTML(p, l...)
 }
 
-func (p *Page) guessMarkupType() string {
-	// First try the explicitly set markup from the frontmatter
-	if p.Markup != "" {
-		format := helpers.GuessType(p.Markup)
-		if format != "unknown" {
-			return format
-		}
+func (p *Page) determineMarkupType() string {
+	// Try markup explicitly set in the frontmatter
+	p.Markup = helpers.GuessType(p.Markup)
+	if p.Markup == "unknown" {
+		// Fall back to file extension (might also return "unknown")
+		p.Markup = helpers.GuessType(p.Source.Ext())
 	}
 
-	return helpers.GuessType(p.Source.Ext())
-}
-
-func (p *Page) detectFrontMatter() (f *parser.FrontmatterType) {
-	return parser.DetectFrontMatter(rune(p.frontmatter[0]))
+	return p.Markup
 }
 
 func (p *Page) parse(reader io.Reader) error {
@@ -893,9 +919,9 @@ func (p *Page) saveSource(by []byte, inpath string, safe bool) (err error) {
 	jww.INFO.Println("creating", inpath)
 
 	if safe {
-		err = helpers.SafeWriteToDisk(inpath, bytes.NewReader(by), hugofs.SourceFs)
+		err = helpers.SafeWriteToDisk(inpath, bytes.NewReader(by), hugofs.Source())
 	} else {
-		err = helpers.WriteToDisk(inpath, bytes.NewReader(by), hugofs.SourceFs)
+		err = helpers.WriteToDisk(inpath, bytes.NewReader(by), hugofs.Source())
 	}
 	if err != nil {
 		return
@@ -911,9 +937,15 @@ func (p *Page) ProcessShortcodes(t tpl.Template) {
 
 	// these short codes aren't used until after Page render,
 	// but processed here to avoid coupling
-	tmpContent, tmpContentShortCodes, _ := extractAndRenderShortcodes(string(p.rawContent), p, t)
-	p.rawContent = []byte(tmpContent)
-	p.contentShortCodes = tmpContentShortCodes
+	// TODO(bep) Move this and remove p.contentShortCodes
+	if !p.rendered {
+		tmpContent, tmpContentShortCodes, _ := extractAndRenderShortcodes(string(p.rawContent), p, t)
+		p.rawContent = []byte(tmpContent)
+		p.contentShortCodes = tmpContentShortCodes
+	} else {
+		// shortcode template may have changed, rerender
+		p.contentShortCodes = renderShortcodes(p.shortcodes, p, t)
+	}
 
 }
 

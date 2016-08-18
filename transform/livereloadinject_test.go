@@ -16,8 +16,10 @@ package transform
 import (
 	"bytes"
 	"fmt"
-	"github.com/spf13/hugo/helpers"
+	"strings"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 func TestLiveReloadInject(t *testing.T) {
@@ -26,13 +28,14 @@ func TestLiveReloadInject(t *testing.T) {
 }
 
 func doTestLiveReloadInject(t *testing.T, bodyEndTag string) {
+	viper.Set("port", 1313)
 	out := new(bytes.Buffer)
-	in := helpers.StringToReader(bodyEndTag)
+	in := strings.NewReader(bodyEndTag)
 
 	tr := NewChain(LiveReloadInject)
 	tr.Apply(out, in, []byte("path"))
 
-	expected := fmt.Sprintf(`<script data-no-instant>document.write('<script src="/livereload.js?mindelay=10"></' + 'script>')</script>%s`, bodyEndTag)
+	expected := fmt.Sprintf(`<script data-no-instant>document.write('<script src="/livereload.js?port=1313&mindelay=10"></' + 'script>')</script>%s`, bodyEndTag)
 	if string(out.Bytes()) != expected {
 		t.Errorf("Expected %s got %s", expected, string(out.Bytes()))
 	}

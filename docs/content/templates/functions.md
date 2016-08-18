@@ -28,6 +28,17 @@ and other basic tools; these are listed in the
 
 ## General
 
+### default
+Checks whether a given value is set and returns a default value if it is not.
+"Set" in this context means non-zero for numeric types and times;
+non-zero length for strings, arrays, slices, and maps;
+any boolean or struct value; or non-nil for any other types.
+
+e.g.
+
+    {{ index .Params "font" | default "Roboto" }} → default is "Roboto"
+    {{ default "Roboto" (index .Params "font") }} → default is "Roboto"
+
 ### delimit
 Loops through any array, slice or map and returns a string of all the values separated by the delimiter. There is an optional third parameter that lets you choose a different delimiter to go between the last two values.
 Maps will be sorted by the keys, and only a slice of the values will be returned, keeping a consistent output order.
@@ -56,7 +67,7 @@ Creates a dictionary `(map[string, interface{})`, expects parameters added in va
 Invalid combinations like keys that are not strings or uneven number of parameters, will result in an exception thrown.
 Useful for passing maps to partials when adding to a template.
 
-e.g. Pass into "foo.html" a map with the keys "important, content" 
+e.g. Pass into "foo.html" a map with the keys "important, content"
 
     {{$important := .Site.Params.SomethingImportant }}
     {{range .Site.Params.Bar}}
@@ -67,12 +78,23 @@ e.g. Pass into "foo.html" a map with the keys "important, content"
 
     Important {{.important}}
     {{.content}}
-    
 
-or Create a map on the fly to pass into 
+or create a map on the fly to pass into
 
     {{partial "foo" (dict "important" "Smiles" "content" "You should do more")}}
-    
+
+
+
+### slice
+
+`slice` allows you to create an array (`[]interface{}`) of all arguments that you pass to this function.
+
+One use case is the concatenation of elements in combination with `delimit`:
+
+```html
+{{ delimit (slice "foo" "bar" "buzz") ", " }}
+<!-- returns the string "foo, bar, buzz" -->
+```
 
 
 ### echoParam
@@ -99,6 +121,14 @@ e.g.
     {{ range first 10 .Data.Pages }}
         {{ .Render "summary" }}
     {{ end }}
+
+
+### jsonify
+Encodes a given object to JSON.
+
+e.g.
+
+   {{ dict "title" .Title "content" .Plain | jsonify }}
 
 ### last
 Slices an array to only the last _N_ elements.
@@ -282,6 +312,15 @@ Following operators are now available
 - `<`, `lt`: True if a given field value is lesser than a matching value
 - `in`: True if a given field value is included in a matching value. A matching value must be an array or a slice
 - `not in`: True if a given field value isn't included in a matching value. A matching value must be an array or a slice
+- `intersect`: True if a given field value that is a slice / array of strings or integers contains elements in common with the matching value. It follows the same rules as the intersect function.
+
+*`intersect` operator, e.g.:*
+
+    {{ range where .Site.Pages ".Params.tags" "intersect" .Params.tags }}
+      {{ if ne .Permalink $.Permalink }}
+        {{ .Render "summary" }}
+      {{ end }}
+    {{ end }}
 
 *`where` and `first` can be stacked, e.g.:*
 
@@ -305,6 +344,21 @@ e.g.
        {{ .Content }}
     {{ end }}
 
+## Files    
+
+### readDir
+
+Gets a directory listing from a directory relative to the current project working dir.
+
+So, If the project working dir has a single file named `README.txt`:
+
+`{{ range (readDir ".") }}{{ .Name }}{{ end }}` → "README.txt"
+
+### readFile
+Reads a file from disk and converts it into a string. Note that the filename must be relative to the current project working dir.
+ So, if you have a file with the name `README.txt` in the root of your project with the content `Hugo Rocks!`:
+
+ `{{readFile "README.txt"}}` → `"Hugo Rocks!"`
 
 ## Math
 
@@ -361,11 +415,11 @@ e.g.
 
 ### int
 
-Creates a `int`.
+Creates an `int`.
 
 e.g.
 
-* `{{int "123" }}` → 123
+* `{{ int "123" }}` → 123
 
 ## Strings
 
@@ -382,18 +436,50 @@ These are formatted with the layout string.
 e.g. `{{ dateFormat "Monday, Jan 2, 2006" "2015-01-21" }}` → "Wednesday, Jan 21, 2015"
 
 
+### emojify
+
+Runs the string through the Emoji emoticons processor. The result will be declared as "safe" so Go templates will not filter it.
+
+See the [Emoji cheat sheet](http://www.emoji-cheat-sheet.com/) for available emoticons.
+
+e.g. `{{ "I :heart: Hugo" | emojify }}`
+
 ### highlight
 Takes a string of code and a language, uses Pygments to return the syntax highlighted code in HTML.
 Used in the [highlight shortcode](/extras/highlighting/).
 
+### htmlEscape
+HtmlEscape returns the given string with the critical reserved HTML codes escaped,
+such that `&` becomes `&amp;` and so on. It escapes only: `<`, `>`, `&`, `'` and `"`.
+
+Bear in mind that, unless content is passed to `safeHTML`, output strings are escaped
+usually by the processor anyway.
+
+e.g.
+`{{ htmlEscape "Hugo & Caddy > Wordpress & Apache" }} → "Hugo &amp; Caddy &gt; Wordpress &amp; Apache"`
+
+### htmlUnescape
+HtmlUnescape returns the given string with html escape codes un-escaped. This
+un-escapes more codes than `htmlEscape` escapes, including `#` codes and pre-UTF8
+escapes for accented characters. It defers completely to the Go `html.UnescapeString`
+function, so functionality is consistent with that codebase.
+
+Remember to pass the output of this to `safeHTML` if fully unescaped characters
+are desired, or the output will be escaped again as normal.
+
+e.g.
+`{{ htmlUnescape "Hugo &amp; Caddy &gt; Wordpress &amp; Apache" }} → "Hugo & Caddy > Wordpress & Apache"`
 
 ### humanize
-Humanize returns the humanized version of a string with the first letter capitalized.
+Humanize returns the humanized version of an argument with the first letter capitalized.
+If the input is either an int64 value or the string representation of an integer, humanize returns the number with the proper ordinal appended.
 
 e.g.
 ```
 {{humanize "my-first-post"}} → "My first post"
 {{humanize "myCamelPost"}} → "My camel post"
+{{humanize "52"}} → "52nd"
+{{humanize 103}} → "103rd"
 ```
 
 
@@ -409,15 +495,58 @@ Runs the string through the Markdown processor. The result will be declared as "
 
 e.g. `{{ .Title | markdownify }}`
 
+### plainify
+
+Strips any HTML and returns the plain text version.
+
+e.g. `{{ "<b>BatMan</b>" | plainify }}` → "BatMan"
+
 ### pluralize
 Pluralize the given word with a set of common English pluralization rules.
 
 e.g. `{{ "cat" | pluralize }}` → "cats"
 
+### findRE
+Returns a list of strings that match the regular expression. By default all matches will be included. The number of matches can be limitted with an optional third parameter.
+
+The example below returns a list of all second level headers (`<h2>`) in the content:
+
+    {{ findRE "<h2.*?>(.|\n)*?</h2>" .Content }}
+
+We can limit the number of matches in that list with a third parameter. Let's say we want to have at most one match (or none if no substring matched):
+
+    {{ findRE "<h2.*?>(.|\n)*?</h2>" .Content 1 }}
+    <!-- returns ["<h2 id="#foo">Foo</h2>"] -->
+
+`findRE` allows us to build an automatically generated table of contents that could be used for a simple scrollspy:
+
+    {{ $headers := findRE "<h2.*?>(.|\n)*?</h2>" .Content }}
+
+    {{ if ge (len $headers) 1 }}
+        <ul>
+        {{ range $headers }}
+            <li>
+                <a href="#{{ . | plainify | urlize }}">
+                    {{ . | plainify }}
+                </a>
+            </li>
+        {{ end }}
+        </ul>
+    {{ end }}
+
+First, we try to find all second-level headers and generate a list if at least one header was found. `plainify` strips the HTML and `urlize` converts the header into an a valid URL.
+
 ### replace
 Replaces all occurrences of the search string with the replacement string.
 
 e.g. `{{ replace "Batman and Robin" "Robin" "Catwoman" }}` → "Batman and Catwoman"
+
+
+### replaceRE
+Replaces all occurrences of a regular expression with the replacement pattern.
+
+e.g. `{{ replaceRE "^https?://([^/]+).*" "$1" "http://gohugo.io/docs" }}` → "gohugo.io"
+e.g. `{{ "http://gohugo.io/docs" | replaceRE "^https?://([^/]+).*" "$1" }}` → "gohugo.io"
 
 
 ### safeHTML
@@ -441,7 +570,6 @@ rendering the whole string as plain-text like this:
 <p>© 2015 Jane Doe.  &lt;a href=&#34;http://creativecommons.org/licenses/by/4.0/&#34;&gt;Some rights reserved&lt;/a&gt;.</p>
 </blockquote>
 
-<!--
 ### safeHTMLAttr
 Declares the provided string as a "safe" HTML attribute
 from a trusted source, for example, ` dir="ltr"`,
@@ -455,8 +583,6 @@ Example: Given a site-wide `config.toml` that contains this menu entry:
 
 * `<a href="{{ .URL }}">` ⇒ `<a href="#ZgotmplZ">` (Bad!)
 * `<a {{ printf "href=%q" .URL | safeHTMLAttr }}>` ⇒ `<a href="irc://irc.freenode.net/#golang">` (Good!)
--->
-
 
 ### safeCSS
 Declares the provided string as a known "safe" CSS string
@@ -507,6 +633,14 @@ e.g.
 * `{{slicestr "BatMan" 3}}` → "Man"
 * `{{slicestr "BatMan" 0 3}}` → "Bat"
 
+### split
+
+Split a string into substrings separated by a delimiter.
+
+e.g.
+
+* `{{split "tag1,tag2,tag3" "," }}` → ["tag1" "tag2" "tag3"]
+
 ### string
 
 Creates a `string`.
@@ -534,6 +668,12 @@ e.g.
 
 * `{{substr "BatMan" 0 -3}}` → "Bat"
 * `{{substr "BatMan" 3 3}}` → "Man"
+
+### hasPrefix
+
+HasPrefix tests whether a string begins with prefix.
+
+* `{{ hasPrefix "Hugo" "Hu" }}` → true
 
 ### title
 Converts all characters in string to titlecase.
@@ -573,6 +713,43 @@ CJK-like languages.
 {{ "Hello, 世界" | countrunes }}
 <!-- outputs a content length of 8 runes. -->
 ```
+
+
+### md5
+
+`md5` hashes the given input and returns its MD5 checksum.
+
+```html
+{{ md5 "Hello world, gophers!" }}
+<!-- returns the string "b3029f756f98f79e7f1b7f1d1f0dd53b" -->
+```
+
+This can be useful if you want to use Gravatar for generating a unique avatar:
+
+```html
+<img src="https://www.gravatar.com/avatar/{{ md5 "your@email.com" }}?s=100&d=identicon">
+```
+
+
+### sha1
+
+`sha1` hashes the given input and returns its SHA1 checksum.
+
+```html
+{{ sha1 "Hello world, gophers!" }}
+<!-- returns the string "c8b5b0e33d408246e30f53e32b8f7627a7a649d4" -->
+```
+
+
+## Times
+
+### time
+
+`time` converts a timestamp string into a [`time.Time`](https://godoc.org/time#Time) structure so you can access its fields. E.g.
+
+* `{{ time "2016-05-28" }}` → "2016-05-28T00:00:00Z"
+* `{{ (time "2016-05-28").YearDay }}` → 149
+* `{{ mul 1000 (time "2016-05-28T10:30:00.00+10:00").Unix }}` → 1464395400000 (Unix time in milliseconds)
 
 
 ## URLs
@@ -715,7 +892,7 @@ This works, but the complexity of "post/tag/list.html" is fairly high; the Hugo 
 This is Hugo. We have a better way. If this were your "post/tag/list.html" instead, all of those problems are fixed automatically (this first version separates all of the operations for ease of reading; the combined version will be shown after the explanation).
 
     <!-- post/tag/list.html -->
-    {{ with.Params.tags }}
+    {{ with .Params.tags }}
     <div class="tags-list">
       Tags:
       {{ $sort := sort . }}
@@ -728,7 +905,7 @@ This is Hugo. We have a better way. If this were your "post/tag/list.html" inste
 In this version, we are now sorting the tags, converting them to links with "post/tag/link.html", cleaning off stray newlines, and joining them together in a delimited list for presentation. That can also be written as:
 
     <!-- post/tag/list.html -->
-    {{ with.Params.tags }}
+    {{ with .Params.tags }}
     <div class="tags-list">
       Tags:
       {{ delimit (apply (apply (sort .) "partial" "post/tag/link" ".") "chomp" ".") ", " }}

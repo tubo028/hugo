@@ -10,6 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package commands
 
 import (
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/hugo/hugofs"
 	"github.com/spf13/hugo/parser"
 )
 
@@ -31,7 +33,7 @@ If the content's draft status is 'False', nothing is done.`,
 	RunE: Undraft,
 }
 
-// Publish publishes the specified content by setting its draft status
+// Undraft publishes the specified content by setting its draft status
 // to false and setting its publish date to now. If the specified content is
 // not a draft, it will log an error.
 func Undraft(cmd *cobra.Command, args []string) error {
@@ -45,7 +47,7 @@ func Undraft(cmd *cobra.Command, args []string) error {
 
 	location := args[0]
 	// open the file
-	f, err := os.Open(location)
+	f, err := hugofs.Source().Open(location)
 	if err != nil {
 		return err
 	}
@@ -62,7 +64,7 @@ func Undraft(cmd *cobra.Command, args []string) error {
 		return newSystemErrorF("an error occurred while undrafting %q: %s", location, err)
 	}
 
-	f, err = os.OpenFile(location, os.O_WRONLY|os.O_TRUNC, 0644)
+	f, err = hugofs.Source().OpenFile(location, os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return newSystemErrorF("%q not be undrafted due to error opening file to save changes: %q\n", location, err)
 	}
@@ -121,15 +123,15 @@ L:
 
 	// get the front matter as bytes and split it into lines
 	var lineEnding []byte
-	fmLines := bytes.Split(fm, parser.UnixEnding)
+	fmLines := bytes.Split(fm, []byte("\n"))
 	if len(fmLines) == 1 { // if the result is only 1 element, try to split on dos line endings
-		fmLines = bytes.Split(fm, parser.DosEnding)
+		fmLines = bytes.Split(fm, []byte("\r\n"))
 		if len(fmLines) == 1 {
 			return buff, fmt.Errorf("unable to split FrontMatter into lines")
 		}
-		lineEnding = append(lineEnding, parser.DosEnding...)
+		lineEnding = append(lineEnding, []byte("\r\n")...)
 	} else {
-		lineEnding = append(lineEnding, parser.UnixEnding...)
+		lineEnding = append(lineEnding, []byte("\n")...)
 	}
 
 	// Write the front matter lines to the buffer, replacing as necessary
