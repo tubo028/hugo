@@ -14,7 +14,6 @@
 package target
 
 import (
-	"fmt"
 	"html/template"
 	"io"
 	"path/filepath"
@@ -32,6 +31,10 @@ type PagePub struct {
 	UglyURLs         bool
 	DefaultExtension string
 	PublishDir       string
+
+	// LangDir will contain the subdir for the language, i.e. "en", "de" etc.
+	// It will be empty if the site is rendered in root.
+	LangDir string
 }
 
 func (pp *PagePub) Publish(path string, r io.Reader) (err error) {
@@ -65,11 +68,19 @@ func (pp *PagePub) TranslateRelative(src string) (dest string, err error) {
 	ext := pp.extension(filepath.Ext(file))
 	name := filename(file)
 
-	if pp.UglyURLs || file == "index.html" || (isRoot && file == "404.html") {
-		return filepath.Join(dir, fmt.Sprintf("%s%s", name, ext)), nil
+	// TODO(bep) Having all of this path logic here seems wrong, but I guess
+	// we'll clean this up when we redo the output files.
+	// This catches the home page in a language sub path. They should never
+	// have any ugly URLs.
+	if pp.LangDir != "" && dir == helpers.FilePathSeparator && name == pp.LangDir {
+		return filepath.Join(dir, name, "index"+ext), nil
 	}
 
-	return filepath.Join(dir, name, fmt.Sprintf("index%s", ext)), nil
+	if pp.UglyURLs || file == "index.html" || (isRoot && file == "404.html") {
+		return filepath.Join(dir, name+ext), nil
+	}
+
+	return filepath.Join(dir, name, "index"+ext), nil
 }
 
 func (pp *PagePub) extension(ext string) string {

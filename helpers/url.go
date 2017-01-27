@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/purell"
+	jww "github.com/spf13/jwalterweatherman"
 	"github.com/spf13/viper"
 )
 
@@ -101,13 +102,13 @@ func SanitizeURLKeepTrailingSlash(in string) string {
 // Example:
 //     uri: Vim (text editor)
 //     urlize: vim-text-editor
-func URLize(uri string) string {
-	sanitized := MakePathSanitized(uri)
+func (p *PathSpec) URLize(uri string) string {
+	sanitized := p.MakePathSanitized(uri)
 
 	// escape unicode letters
 	parsedURI, err := url.Parse(sanitized)
 	if err != nil {
-		// if net/url can not parse URL it's meaning Sanitize works incorrect
+		// if net/url can not parse URL it means Sanitize works incorrectly
 		panic(err)
 	}
 	x := parsedURI.String()
@@ -146,19 +147,19 @@ func MakePermalink(host, plink string) *url.URL {
 	return base
 }
 
-// AbsURL creates a absolute URL from the relative path given and the BaseURL set in config.
-func AbsURL(path string) string {
-	url, err := url.Parse(path)
+// AbsURL creates an absolute URL from the relative path given and the BaseURL set in config.
+func (p *PathSpec) AbsURL(in string, addLanguage bool) string {
+	url, err := url.Parse(in)
 	if err != nil {
-		return path
+		return in
 	}
 
-	if url.IsAbs() || strings.HasPrefix(path, "//") {
-		return path
+	if url.IsAbs() || strings.HasPrefix(in, "//") {
+		return in
 	}
 
-	baseURL := viper.GetString("BaseURL")
-	if strings.HasPrefix(path, "/") {
+	baseURL := viper.GetString("baseURL")
+	if strings.HasPrefix(in, "/") {
 		p, err := url.Parse(baseURL)
 		if err != nil {
 			panic(err)
@@ -166,28 +167,99 @@ func AbsURL(path string) string {
 		p.Path = ""
 		baseURL = p.String()
 	}
-	return MakePermalink(baseURL, path).String()
+
+	if addLanguage {
+		prefix := p.getLanguagePrefix()
+		if prefix != "" {
+			hasPrefix := false
+			// avoid adding language prefix if already present
+			if strings.HasPrefix(in, "/") {
+				hasPrefix = strings.HasPrefix(in[1:], prefix)
+			} else {
+				hasPrefix = strings.HasPrefix(in, prefix)
+			}
+
+			if !hasPrefix {
+				addSlash := in == "" || strings.HasSuffix(in, "/")
+				in = path.Join(prefix, in)
+
+				if addSlash {
+					in += "/"
+				}
+			}
+		}
+	}
+	return MakePermalink(baseURL, in).String()
+}
+
+func (p *PathSpec) getLanguagePrefix() string {
+	if !p.multilingual {
+		return ""
+	}
+
+	defaultLang := p.defaultContentLanguage
+	defaultInSubDir := p.defaultContentLanguageInSubdir
+
+	currentLang := p.currentContentLanguage.Lang
+	if currentLang == "" || (currentLang == defaultLang && !defaultInSubDir) {
+		return ""
+	}
+	return currentLang
+}
+
+// IsAbsURL determines whether the given path points to an absolute URL.
+func IsAbsURL(path string) bool {
+	url, err := url.Parse(path)
+	if err != nil {
+		return false
+	}
+
+	return url.IsAbs() || strings.HasPrefix(path, "//")
 }
 
 // RelURL creates a URL relative to the BaseURL root.
 // Note: The result URL will not include the context root if canonifyURLs is enabled.
-func RelURL(path string) string {
-	baseURL := viper.GetString("BaseURL")
-	canonifyURLs := viper.GetBool("canonifyURLs")
-	if (!strings.HasPrefix(path, baseURL) && strings.HasPrefix(path, "http")) || strings.HasPrefix(path, "//") {
-		return path
+func (p *PathSpec) RelURL(in string, addLanguage bool) string {
+	baseURL := viper.GetString("baseURL")
+	canonifyURLs := p.canonifyURLs
+	if (!strings.HasPrefix(in, baseURL) && strings.HasPrefix(in, "http")) || strings.HasPrefix(in, "//") {
+		return in
 	}
 
-	u := path
+	u := in
 
-	if strings.HasPrefix(path, baseURL) {
+	if strings.HasPrefix(in, baseURL) {
 		u = strings.TrimPrefix(u, baseURL)
+	}
+
+	if addLanguage {
+		prefix := p.getLanguagePrefix()
+		if prefix != "" {
+			hasPrefix := false
+			// avoid adding language prefix if already present
+			if strings.HasPrefix(in, "/") {
+				hasPrefix = strings.HasPrefix(in[1:], prefix)
+			} else {
+				hasPrefix = strings.HasPrefix(in, prefix)
+			}
+
+			if !hasPrefix {
+				hadSlash := strings.HasSuffix(u, "/")
+
+				u = path.Join(prefix, u)
+
+				if hadSlash {
+					u += "/"
+				}
+			}
+		}
 	}
 
 	if !canonifyURLs {
 		u = AddContextRoot(baseURL, u)
 	}
-	if path == "" && !strings.HasSuffix(u, "/") && strings.HasSuffix(baseURL, "/") {
+
+	if in == "" && !strings.HasSuffix(u, "/") && strings.HasSuffix(baseURL, "/") {
 		u += "/"
 	}
 
@@ -217,12 +289,15 @@ func AddContextRoot(baseURL, relativePath string) string {
 	return newPath
 }
 
-func URLizeAndPrep(in string) string {
-	return URLPrep(viper.GetBool("UglyURLs"), URLize(in))
+// URLizeAndPrep applies misc sanitation to the given URL to get it in line
+// with the Hugo standard.
+func (p *PathSpec) URLizeAndPrep(in string) string {
+	return p.URLPrep(p.URLize(in))
 }
 
-func URLPrep(ugly bool, in string) string {
-	if ugly {
+// URLPrep applies misc sanitation to the given URL.
+func (p *PathSpec) URLPrep(in string) string {
+	if p.uglyURLs {
 		x := Uglify(SanitizeURL(in))
 		return x
 	}
@@ -232,7 +307,7 @@ func URLPrep(ugly bool, in string) string {
 	}
 	url, err := purell.NormalizeURLString(x, purell.FlagAddTrailingSlash)
 	if err != nil {
-		fmt.Printf("ERROR returned by NormalizeURLString. Returning in = %q\n", in)
+		jww.ERROR.Printf("Failed to normalize URL string. Returning in = %q\n", in)
 		return in
 	}
 	return url

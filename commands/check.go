@@ -15,26 +15,9 @@ package commands
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/spf13/hugo/hugolib"
 )
 
 var checkCmd = &cobra.Command{
 	Use:   "check",
-	Short: "Check content in the source directory",
-	Long: `Hugo will perform some basic analysis on the content provided
-and will give feedback.`,
-}
-
-func init() {
-	initHugoBuilderFlags(checkCmd)
-	checkCmd.RunE = check
-}
-
-func check(cmd *cobra.Command, args []string) error {
-	if err := InitializeConfig(checkCmd); err != nil {
-		return err
-	}
-	site := hugolib.Site{}
-
-	return site.Analyze()
+	Short: "Contains some verification checks",
 }

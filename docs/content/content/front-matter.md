@@ -82,7 +82,7 @@ Content of the file goes Here
 ## Variables
 
 There are a few predefined variables that Hugo is aware of and utilizes. The user can also create
-any variable they want to. These will be placed into the `.Params` variable available to the templates.
+any variable they want. These will be placed into the `.Params` variable available to the templates.
 Field names are always normalized to lowercase (e.g. `camelCase: true` is available as `.Params.camelcase`).
 
 ### Required variables
@@ -102,19 +102,18 @@ Field names are always normalized to lowercase (e.g. `camelCase: true` is availa
 * **publishdate** If in the future, content will not be rendered unless `hugo` is called with `--buildFuture`
 * **expirydate** Content already expired will not be rendered unless `hugo` is called with `--buildExpired`
 * **type** The type of the content (will be derived from the directory automatically if unset)
-* **isCJKLanguage** If true, explicitly treat the content as CJKLanguage (.Summary and .WordCount can work properly in CJKLanguage)
+* **isCJKLanguage** If true, explicitly treat the content as CJKLanguage (`.Summary` and `.WordCount` can work properly in CJKLanguage)
 * **weight** Used for sorting
 * **markup** *(Experimental)* Specify `"rst"` for reStructuredText (requires
             `rst2html`) or `"md"` (default) for Markdown
-* **slug** The token to appear in the tail of the URL,
-   *or*<br>
-* **url** The full path to the content from the web root.<br>
+* **slug** appears as tail of the url. It can be used to change the part of the url that is based on the filename.
+* **url** The full path to the content from the web root. It makes no assumptions about the path of the content file. It also ignores any language prefixes of the multilingual feature.
 
 *If neither `slug` or `url` is present, the filename will be used.*
 
 ## Configure Blackfriday rendering
 
-It's possible to set some options for Markdown rendering in the page's front matter, as an override to the site wide configuration.
+It's possible to set some options for Markdown rendering in the page's front matter as an override to the site wide configuration.
 
 See [Configuration]({{< ref "overview/configuration.md#configure-blackfriday-rendering" >}}) for more.
 

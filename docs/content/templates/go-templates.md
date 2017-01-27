@@ -65,8 +65,7 @@ Accessing the Page Parameter "bar"
 ## Variables
 
 Each Go template has a struct (object) made available to it. In Hugo, each
-template is passed either a page or a node struct depending on which type of
-page you are rendering. More details are available on the
+template is passed page struct. More details are available on the
 [variables](/layout/variables/) page.
 
 A variable is accessed by referencing the variable name.
@@ -207,14 +206,11 @@ A few simple examples should help convey how to use the pipe.
 
 **Example 1:**
 
-    {{ if eq 1 1 }} Same {{ end }}
+    {{ shuffle (seq 1 5) }}
 
 is the same as
 
-    {{ eq 1 1 | if }} Same {{ end }}
-
-It does look odd to place the `if` at the end, but it does provide a good
-illustration of how to use the pipes.
+    {{ (seq 1 5) | shuffle }}
 
 **Example 2:**
 
@@ -228,13 +224,13 @@ The `index` function is a [Go][] built-in, and you can read about it [here][gost
 
 **Example 3:**
 
-    {{ if or (or (isset .Params "title") (isset .Params "caption")) (isset .Params "attr")}}
+    {{ if or (or (isset .Params "title") (isset .Params "caption")) (isset .Params "attr") }}
     Stuff Here
     {{ end }}
 
 Could be rewritten as
 
-    {{  isset .Params "caption" | or isset .Params "title" | or isset .Params "attr" | if }}
+    {{ if isset .Params "caption" | or isset .Params "title" | or isset .Params "attr" }}
     Stuff Here
     {{ end }}
 
@@ -267,7 +263,7 @@ access this from within the loop, you will likely want to do one of the followin
         {{ $title := .Site.Title }}
         {{ range .Params.tags }}
           <li>
-            <a href="{{ $baseurl }}/tags/{{ . | urlize }}">{{ . }}</a>
+            <a href="{{ $baseURL }}/tags/{{ . | urlize }}">{{ . }}</a>
             - {{ $title }}
           </li>
         {{ end }}
@@ -281,7 +277,7 @@ access this from within the loop, you will likely want to do one of the followin
 
         {{ range .Params.tags }}
           <li>
-            <a href="{{ $baseurl }}/tags/{{ . | urlize }}">{{ . }}</a>
+            <a href="{{ $baseURL }}/tags/{{ . | urlize }}">{{ . }}</a>
             - {{ $.Site.Title }}
           </li>
         {{ end }}

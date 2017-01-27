@@ -69,11 +69,13 @@ func (c *chain) Apply(w io.Writer, r io.Reader, p []byte) error {
 	b1 := bp.GetBuffer()
 	defer bp.PutBuffer(b1)
 
-	b1.ReadFrom(r)
+	if _, err := b1.ReadFrom(r); err != nil {
+		return err
+	}
 
 	if len(*c) == 0 {
-		b1.WriteTo(w)
-		return nil
+		_, err := b1.WriteTo(w)
+		return err
 	}
 
 	b2 := bp.GetBuffer()
@@ -97,6 +99,6 @@ func (c *chain) Apply(w io.Writer, r io.Reader, p []byte) error {
 		tr(fb)
 	}
 
-	fb.to.WriteTo(w)
-	return nil
+	_, err := fb.to.WriteTo(w)
+	return err
 }

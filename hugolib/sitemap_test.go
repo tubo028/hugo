@@ -14,21 +14,20 @@
 package hugolib
 
 import (
-	"bytes"
 	"testing"
 
+	"reflect"
+
 	"github.com/spf13/hugo/helpers"
-	"github.com/spf13/hugo/hugofs"
 	"github.com/spf13/hugo/source"
 	"github.com/spf13/viper"
-	"reflect"
 )
 
-const SITEMAP_TEMPLATE = `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+const sitemapTemplate = `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   {{ range .Data.Pages }}
   <url>
-    <loc>{{ .Permalink }}</loc>
-    <lastmod>{{ safeHTML ( .Date.Format "2006-01-02T15:04:05-07:00" ) }}</lastmod>{{ with .Sitemap.ChangeFreq }}
+    <loc>{{ .Permalink }}</loc>{{ if not .Lastmod.IsZero }}
+    <lastmod>{{ safeHTML ( .Lastmod.Format "2006-01-02T15:04:05-07:00" ) }}</lastmod>{{ end }}{{ with .Sitemap.ChangeFreq }}
     <changefreq>{{ . }}</changefreq>{{ end }}{{ if ge .Sitemap.Priority 0.0 }}
     <priority>{{ .Sitemap.Priority }}</priority>{{ end }}
   </url>
@@ -36,51 +35,46 @@ const SITEMAP_TEMPLATE = `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap
 </urlset>`
 
 func TestSitemapOutput(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	for _, internal := range []bool{false, true} {
+		doTestSitemapOutput(t, internal)
+	}
+}
 
-	hugofs.InitMemFs()
+func doTestSitemapOutput(t *testing.T, internal bool) {
+	testCommonResetState()
 
-	viper.Set("baseurl", "http://auth/bub/")
+	viper.Set("baseURL", "http://auth/bub/")
 
 	s := &Site{
-		Source: &source.InMemorySource{ByteSource: weightedSources},
+		deps:     newDeps(DepsCfg{}),
+		Source:   &source.InMemorySource{ByteSource: weightedSources},
+		Language: helpers.NewDefaultLanguage(),
 	}
 
-	s.initializeSiteInfo()
+	if internal {
+		if err := buildAndRenderSite(s); err != nil {
+			t.Fatalf("Failed to build site: %s", err)
+		}
 
-	s.prepTemplates("sitemap.xml", SITEMAP_TEMPLATE)
-
-	if err := s.createPages(); err != nil {
-		t.Fatalf("Unable to create pages: %s", err)
+	} else {
+		if err := buildAndRenderSite(s, "sitemap.xml", sitemapTemplate); err != nil {
+			t.Fatalf("Failed to build site: %s", err)
+		}
 	}
 
-	if err := s.buildSiteMeta(); err != nil {
-		t.Fatalf("Unable to build site metadata: %s", err)
-	}
+	assertFileContent(t, "public/sitemap.xml", true,
+		// Regular page
+		" <loc>http://auth/bub/sect/doc1/</loc>",
+		// Home page
+		"<loc>http://auth/bub/</loc>",
+		// Section
+		"<loc>http://auth/bub/sect/</loc>",
+		// Tax terms
+		"<loc>http://auth/bub/categories/</loc>",
+		// Tax list
+		"<loc>http://auth/bub/categories/hugo/</loc>",
+	)
 
-	if err := s.renderHomePage(); err != nil {
-		t.Fatalf("Unable to RenderHomePage: %s", err)
-	}
-
-	if err := s.renderSitemap(); err != nil {
-		t.Fatalf("Unable to RenderSitemap: %s", err)
-	}
-
-	if err := s.renderRobotsTXT(); err != nil {
-		t.Fatalf("Unable to RenderRobotsTXT :%s", err)
-	}
-
-	sitemapFile, err := hugofs.Destination().Open("sitemap.xml")
-
-	if err != nil {
-		t.Fatalf("Unable to locate: sitemap.xml")
-	}
-
-	sitemap := helpers.ReaderToBytes(sitemapFile)
-	if !bytes.HasPrefix(sitemap, []byte("<?xml")) {
-		t.Errorf("Sitemap file should start with <?xml. %s", sitemap)
-	}
 }
 
 func TestParseSitemap(t *testing.T) {

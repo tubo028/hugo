@@ -14,6 +14,7 @@
 package hugolib
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/spf13/hugo/helpers"
@@ -22,6 +23,10 @@ import (
 // The TaxonomyList is a list of all taxonomies and their values
 // e.g. List['tags'] => TagTaxonomy (from above)
 type TaxonomyList map[string]Taxonomy
+
+func (tl TaxonomyList) String() string {
+	return fmt.Sprintf("TaxonomyList(%d)", len(tl))
+}
 
 // A Taxonomy is a map of keywords to a list of pages.
 // For example
@@ -39,6 +44,10 @@ type WeightedPage struct {
 	Page   *Page
 }
 
+func (w WeightedPage) String() string {
+	return fmt.Sprintf("WeightedPage(%d,%q)", w.Weight, w.Page.Title)
+}
+
 // OrderedTaxonomy is another representation of an Taxonomy using an array rather than a map.
 // Important because you can't order a map.
 type OrderedTaxonomy []OrderedTaxonomyEntry
@@ -52,7 +61,7 @@ type OrderedTaxonomyEntry struct {
 
 // KeyPrep... Taxonomies should be case insensitive. Can make it easily conditional later.
 func kp(in string) string {
-	return helpers.MakePathSanitized(in)
+	return helpers.CurrentPathSpec().MakePathSanitized(in)
 }
 
 // Get the weighted pages for the given key.

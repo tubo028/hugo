@@ -24,7 +24,7 @@ The installation of Go should take only a few minutes. [Download](https://golang
 
 Let's confirm the correct installation of Go. Open a terminal (or command line under Windows). Execute `go version` and you should see the version number of your Go installation. Next, make sure that you setup the `GOPATH` as described in the installation guide.
 
-You can print the `GOPATH` with `echo $GOPATH`. You should a non-empty string containing a valid path. 
+You can print the `GOPATH` with `echo $GOPATH`. You should see a non-empty string containing a valid path to your Go workspace. 
 
 ### GVM as alternative
 
@@ -177,7 +177,7 @@ You can check on which branch your are with `git branch`. You should see a list 
 
 Perhaps you want to start contributing to the docs. Then you can ignore most of the following steps. You can find the documentation within the cloned repository in the subfolder `docs`. Change the directory with `cd docs`. Install the [latest release]({{< relref "overview/installing.md" >}}). Or read on and build Hugo from source. 
 
-You can start Hugo's built-in server via `hugo server`. Browse the documentation by entering [http://localhost:1313](http://localhost:1313) in the address bar of your browser. The server automatically updates the page if you change it's content.
+You can start Hugo's built-in server via `hugo server`. Browse the documentation by entering [http://localhost:1313](http://localhost:1313) in the address bar of your browser. The server automatically updates the page if you change its content.
 
 ### Building Hugo
 
@@ -195,7 +195,7 @@ Make sure the commands `go test ./...` passes, and `go build` completes.
 
 ### Formatting
 
-The Go code styleguide maybe is opiniated but it ensures that the codebase looks the same, regardless who wrote the code. Go comes with it's own formatting tool. Let's apply the styleguide to our addtions:
+The Go code styleguide maybe is opiniated but it ensures that the codebase looks the same, regardless who wrote the code. Go comes with its own formatting tool. Let's apply the styleguide to our addtions:
 
 ```sh
 go fmt ./...
@@ -337,4 +337,4 @@ If you have questions leave a comment in the pull request. We are willing to ass
 
 ## Where to start?
 
-Thank you for reading this tutorial. Hopefully, we see us again on GitHub. There are plenty of [open issues](https://github.com/spf13/hugo/issues) on GitHub. Feel free to open an issue if you think you found a bug or you have a new idea to improve Hugo. We are happy to hear from you.
+Thank you for reading this tutorial. Hopefully, we see you again on GitHub. There are plenty of [open issues](https://github.com/spf13/hugo/issues) on GitHub. Feel free to open an issue if you think you found a bug or you have a new idea to improve Hugo. We are happy to hear from you.

@@ -25,13 +25,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/stretchr/testify/assert"
+
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 )
 
+func initCommonTestConfig() {
+	viper.Set("currentContentLanguage", NewLanguage("en"))
+}
+
 func TestMakePath(t *testing.T) {
 	viper.Reset()
 	defer viper.Reset()
+	initCommonTestConfig()
 
 	tests := []struct {
 		input         string
@@ -49,11 +58,14 @@ func TestMakePath(t *testing.T) {
 		{"संस्कृत", "संस्कृत", false},
 		{"a%C3%B1ame", "a%C3%B1ame", false},         // Issue #1292
 		{"this+is+a+test", "this+is+a+test", false}, // Issue #1290
+		{"~foo", "~foo", false},                     // Issue #2177
+
 	}
 
 	for _, test := range tests {
-		viper.Set("RemovePathAccents", test.removeAccents)
-		output := MakePath(test.input)
+		viper.Set("removePathAccents", test.removeAccents)
+		p := NewPathSpecFromConfig(viper.GetViper())
+		output := p.MakePath(test.input)
 		if output != test.expected {
 			t.Errorf("Expected %#v, got %#v\n", test.expected, output)
 		}
@@ -63,6 +75,9 @@ func TestMakePath(t *testing.T) {
 func TestMakePathSanitized(t *testing.T) {
 	viper.Reset()
 	defer viper.Reset()
+	initCommonTestConfig()
+
+	p := NewPathSpecFromConfig(viper.GetViper())
 
 	tests := []struct {
 		input    string
@@ -77,7 +92,7 @@ func TestMakePathSanitized(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		output := MakePathSanitized(test.input)
+		output := p.MakePathSanitized(test.input)
 		if output != test.expected {
 			t.Errorf("Expected %#v, got %#v\n", test.expected, output)
 		}
@@ -87,7 +102,10 @@ func TestMakePathSanitized(t *testing.T) {
 func TestMakePathSanitizedDisablePathToLower(t *testing.T) {
 	viper.Reset()
 	defer viper.Reset()
-	viper.Set("DisablePathToLower", true)
+
+	initCommonTestConfig()
+	viper.Set("disablePathToLower", true)
+	p := NewPathSpecFromConfig(viper.GetViper())
 
 	tests := []struct {
 		input    string
@@ -102,7 +120,7 @@ func TestMakePathSanitizedDisablePathToLower(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		output := MakePathSanitized(test.input)
+		output := p.MakePathSanitized(test.input)
 		if output != test.expected {
 			t.Errorf("Expected %#v, got %#v\n", test.expected, output)
 		}
@@ -139,6 +157,33 @@ func TestGetRelativePath(t *testing.T) {
 		}
 
 	}
+}
+
+func TestGetRealPath(t *testing.T) {
+	if runtime.GOOS == "windows" && os.Getenv("CI") == "" {
+		t.Skip("Skip TestGetRealPath as os.Symlink needs administrator rights on Windows")
+	}
+
+	d1, err := ioutil.TempDir("", "d1")
+	defer os.Remove(d1)
+	fs := afero.NewOsFs()
+
+	rp1, err := GetRealPath(fs, d1)
+	require.NoError(t, err)
+	assert.Equal(t, d1, rp1)
+
+	sym := filepath.Join(os.TempDir(), "d1sym")
+	err = os.Symlink(d1, sym)
+	require.NoError(t, err)
+	defer os.Remove(sym)
+
+	rp2, err := GetRealPath(fs, sym)
+	require.NoError(t, err)
+
+	// On OS X, the temp folder is itself a symbolic link (to /private...)
+	// This has to do for now.
+	assert.True(t, strings.HasSuffix(rp2, d1))
+
 }
 
 func TestMakePathRelative(t *testing.T) {
@@ -506,7 +551,7 @@ func TestAbsPathify(t *testing.T) {
 	for i, d := range data {
 		viper.Reset()
 		// todo see comment in AbsPathify
-		viper.Set("WorkingDir", d.workingDir)
+		viper.Set("workingDir", d.workingDir)
 
 		expected := AbsPathify(d.inPath)
 		if d.expected != expected {
@@ -516,7 +561,7 @@ func TestAbsPathify(t *testing.T) {
 	t.Logf("Running platform specific path tests for %s", runtime.GOOS)
 	if runtime.GOOS == "windows" {
 		for i, d := range windowsData {
-			viper.Set("WorkingDir", d.workingDir)
+			viper.Set("workingDir", d.workingDir)
 
 			expected := AbsPathify(d.inPath)
 			if d.expected != expected {
@@ -525,7 +570,7 @@ func TestAbsPathify(t *testing.T) {
 		}
 	} else {
 		for i, d := range unixData {
-			viper.Set("WorkingDir", d.workingDir)
+			viper.Set("workingDir", d.workingDir)
 
 			expected := AbsPathify(d.inPath)
 			if d.expected != expected {

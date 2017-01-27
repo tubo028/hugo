@@ -22,6 +22,7 @@ The top level of a source directory will typically have the following elements:
     ▸ archetypes/
     ▸ content/
     ▸ data/
+    ▸ i18n/
     ▸ layouts/
     ▸ static/
     ▸ themes/
@@ -29,13 +30,14 @@ The top level of a source directory will typically have the following elements:
 
 Learn more about the different directories and what their purpose is:
 
-* [config](/overview/configuration/)
-* [data](/extras/datafiles/)
-* [archetypes](/content/archetypes/)
-* [content](/content/organization/)
-* [layouts](/layout/overview/)
-* [static](/themes/creation#static)
-* [themes](/themes/overview/)
+* [config]({{< relref "overview/configuration.md" >}})
+* [data]({{< relref "extras/datafiles.md" >}})
+* [i18n]({{< relref "content/multilingual.md#translation-of-strings" >}})
+* [archetypes]({{< relref "content/archetypes.md" >}})
+* [content]({{< relref "content/organization.md" >}})
+* [layouts]({{< relref "templates/overview.md" >}})
+* [static]({{< relref "themes/creation.md#static" >}})
+* [themes]({{< relref "themes/overview.md" >}})
 
 
 ## Example
@@ -54,6 +56,7 @@ An example directory may look like:
     |   |   ├── first.md
     |   |   └── second.md
     ├── data
+    ├── i18n
     ├── layouts
     |   ├── _default
     |   |   ├── single.html
@@ -92,3 +95,32 @@ This directory structure tells us a lot about this site:
 1. The website intends to have two different types of content: *posts* and *quotes*.
 2. It will also apply two different taxonomies to that content: *categories* and *tags*.
 3. It will be displaying content in 3 different views: a list, a summary and a full page view.
+
+## Content for home page and other list pages
+
+Since Hugo 0.18, "everything" is a `Page` that can have content and metadata, like `.Params`, attached to it -- and share the same set of [page variables](/templates/variables/).
+
+To add content and frontmatter to the home page, a section, a taxonomy or a taxonomy terms listing, add a markdown file with the base name `_index` on the relevant place on the file system.
+
+For the default Markdown content, the filename will be `_index.md`. 
+
+Se the example directory tree below. 
+
+**Note that you don't have to create `_index` file for every section, taxonomy and similar, a default page will be created if not present, but with no content and default values for `.Title` etc.**
+
+```bash
+└── content
+    ├── _index.md
+    ├── categories
+    │   ├── _index.md
+    │   └── photo
+    │       └── _index.md
+    ├── post
+    │   ├── _index.md
+    │   └── firstpost.md
+    └── tags
+        ├── _index.md
+        └── hugo
+            └── _index.md
+```
+  

@@ -19,6 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"image"
+	"image/color"
+	"image/png"
 	"math/rand"
 	"path"
 	"path/filepath"
@@ -30,12 +33,19 @@ import (
 
 	"github.com/spf13/hugo/helpers"
 
+	"io/ioutil"
+	"log"
+	"os"
+
 	"github.com/spf13/afero"
 	"github.com/spf13/cast"
 	"github.com/spf13/hugo/hugofs"
+	jww "github.com/spf13/jwalterweatherman"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
+
+var logger = jww.NewNotepad(jww.LevelFatal, jww.LevelFatal, os.Stdout, ioutil.Discard, "", log.Ldate|log.Ltime)
 
 type tstNoStringer struct {
 }
@@ -63,6 +73,11 @@ func tstIsLt(tp tstCompareType) bool {
 	return tp == tstLt || tp == tstLe
 }
 
+func tstInitTemplates() {
+	viper.Set("CurrentContentLanguage", helpers.NewLanguage("en"))
+	helpers.ResetConfigProvider()
+}
+
 func TestFuncsInTemplate(t *testing.T) {
 
 	viper.Reset()
@@ -70,7 +85,9 @@ func TestFuncsInTemplate(t *testing.T) {
 
 	workingDir := "/home/hugo"
 
-	viper.Set("WorkingDir", workingDir)
+	viper.Set("workingDir", workingDir)
+	viper.Set("currentContentLanguage", helpers.NewDefaultLanguage())
+	viper.Set("multilingual", true)
 
 	fs := &afero.MemMapFs{}
 	hugofs.InitFs(fs)
@@ -80,7 +97,8 @@ func TestFuncsInTemplate(t *testing.T) {
 	// Add the examples from the docs: As a smoke test and to make sure the examples work.
 	// TODO(bep): docs: fix title example
 	in :=
-		`absURL: {{ "http://gohugo.io/" | absURL }}
+		`absLangURL: {{ "index.html" | absLangURL }}
+absURL: {{ "http://gohugo.io/" | absURL }}
 absURL: {{ "mystyle.css" | absURL }}
 absURL: {{ 42 | absURL }}
 add: {{add 1 2}}
@@ -91,6 +109,7 @@ chomp: {{chomp "<p>Blockhead</p>\n" }}
 dateFormat: {{ dateFormat "Monday, Jan 2, 2006" "2015-01-21" }}
 delimit: {{ delimit (slice "A" "B" "C") ", " " and " }}
 div: {{div 6 3}}
+echoParam: {{ echoParam .Params "langCode" }}
 emojify: {{ "I :heart: Hugo" | emojify }}
 eq: {{ if eq .Section "blog" }}current{{ end }}
 findRE: {{ findRE "[G|g]o" "Hugo is a static side generator written in Go." 1 }}
@@ -117,9 +136,11 @@ modBool: {{modBool 15 3}}
 mul: {{mul 2 3}}
 plainify: {{ plainify  "Hello <strong>world</strong>, gophers!" }}
 pluralize: {{ "cat" | pluralize }}
-querify: {{ (querify "foo" 1 "bar" 2 "baz" "with spaces" "qux" "this&that=those") | safeHTML }}
+querify 1: {{ (querify "foo" 1 "bar" 2 "baz" "with spaces" "qux" "this&that=those") | safeHTML }}
+querify 2: <a href="https://www.google.com?{{ (querify "q" "test" "page" 3) | safeURL }}">Search</a>
 readDir: {{ range (readDir ".") }}{{ .Name }}{{ end }}
 readFile: {{ readFile "README.txt" }}
+relLangURL: {{ "index.html" | relLangURL }}
 relURL 1: {{ "http://gohugo.io/" | relURL }}
 relURL 2: {{ "mystyle.css" | relURL }}
 relURL 3: {{ mul 2 21 | relURL }}
@@ -132,6 +153,7 @@ safeJS: {{ "(1*2)" | safeJS | safeJS }}
 safeURL: {{ "http://gohugo.io" | safeURL | safeURL }}
 seq: {{ seq 3 }}
 sha1: {{ sha1 "Hello world, gophers!" }}
+sha256: {{ sha256 "Hello world, gophers!" }}
 singularize: {{ "cats" | singularize }}
 slicestr: {{slicestr "BatMan" 0 3}}
 slicestr: {{slicestr "BatMan" 3}}
@@ -142,11 +164,14 @@ substr: {{substr "BatMan" 3 3}}
 title: {{title "Bat man"}}
 time: {{ (time "2015-01-21").Year }}
 trim: {{ trim "++Batman--" "+-" }}
+truncate: {{ "this is a very long text" | truncate 10 " ..." }}
+truncate: {{ "With [Markdown](/markdown) inside." | markdownify | truncate 14 }}
 upper: {{upper "BatMan"}}
 urlize: {{ "Bat Man" | urlize }}
 `
 
-	expected := `absURL: http://gohugo.io/
+	expected := `absLangURL: http://mysite.com/hugo/en/index.html
+absURL: http://gohugo.io/
 absURL: http://mysite.com/hugo/mystyle.css
 absURL: http://mysite.com/hugo/42
 add: 3
@@ -157,6 +182,7 @@ chomp: <p>Blockhead</p>
 dateFormat: Wednesday, Jan 21, 2015
 delimit: A, B and C
 div: 2
+echoParam: en
 emojify: I ❤️ Hugo
 eq: current
 findRE: [go]
@@ -183,9 +209,11 @@ modBool: true
 mul: 6
 plainify: Hello world, gophers!
 pluralize: cats
-querify: bar=2&baz=with+spaces&foo=1&qux=this%26that%3Dthose
+querify 1: bar=2&baz=with+spaces&foo=1&qux=this%26that%3Dthose
+querify 2: <a href="https://www.google.com?page=3&amp;q=test">Search</a>
 readDir: README.txt
 readFile: Hugo Rocks!
+relLangURL: /hugo/en/index.html
 relURL 1: http://gohugo.io/
 relURL 2: /hugo/mystyle.css
 relURL 3: /hugo/42
@@ -198,6 +226,7 @@ safeJS: (1*2)
 safeURL: http://gohugo.io
 seq: [1 2 3]
 sha1: c8b5b0e33d408246e30f53e32b8f7627a7a649d4
+sha256: 6ec43b78da9669f50e4e422575c54bf87536954ccd58280219c393f2ce352b46
 singularize: cat
 slicestr: Bat
 slicestr: Man
@@ -208,21 +237,27 @@ substr: Man
 title: Bat Man
 time: 2015
 trim: Batman
+truncate: this is a ...
+truncate: With <a href="/markdown">Markdown …</a>
 upper: BATMAN
 urlize: bat-man
 `
 
 	var b bytes.Buffer
-	templ, err := New().New("test").Parse(in)
+	templ, err := New(logger).New("test").Parse(in)
 	var data struct {
 		Title   string
 		Section string
+		Params  map[string]interface{}
 	}
 
 	data.Title = "**BatMan**"
 	data.Section = "blog"
+	data.Params = map[string]interface{}{"langCode": "en"}
 
 	viper.Set("baseURL", "http://mysite.com/hugo/")
+
+	tstInitTemplates()
 
 	if err != nil {
 		t.Fatal("Got error on parse", err)
@@ -579,6 +614,124 @@ func TestDictionary(t *testing.T) {
 	}
 }
 
+func blankImage(width, height int) []byte {
+	var buf bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	if err := png.Encode(&buf, img); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
+func TestImageConfig(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	workingDir := "/home/hugo"
+
+	viper.Set("workingDir", workingDir)
+
+	fs := &afero.MemMapFs{}
+	hugofs.InitFs(fs)
+
+	for i, this := range []struct {
+		resetCache bool
+		path       string
+		input      []byte
+		expected   image.Config
+	}{
+		// Make sure that the cache is initialized by default.
+		{
+			resetCache: false,
+			path:       "a.png",
+			input:      blankImage(10, 10),
+			expected: image.Config{
+				Width:      10,
+				Height:     10,
+				ColorModel: color.NRGBAModel,
+			},
+		},
+		{
+			resetCache: true,
+			path:       "a.png",
+			input:      blankImage(10, 10),
+			expected: image.Config{
+				Width:      10,
+				Height:     10,
+				ColorModel: color.NRGBAModel,
+			},
+		},
+		{
+			resetCache: false,
+			path:       "b.png",
+			input:      blankImage(20, 15),
+			expected: image.Config{
+				Width:      20,
+				Height:     15,
+				ColorModel: color.NRGBAModel,
+			},
+		},
+		{
+			resetCache: false,
+			path:       "a.png",
+			input:      blankImage(20, 15),
+			expected: image.Config{
+				Width:      10,
+				Height:     10,
+				ColorModel: color.NRGBAModel,
+			},
+		},
+		{
+			resetCache: true,
+			path:       "a.png",
+			input:      blankImage(20, 15),
+			expected: image.Config{
+				Width:      20,
+				Height:     15,
+				ColorModel: color.NRGBAModel,
+			},
+		},
+	} {
+		afero.WriteFile(fs, filepath.Join(workingDir, this.path), this.input, 0755)
+
+		if this.resetCache {
+			resetImageConfigCache()
+		}
+
+		result, err := imageConfig(this.path)
+		if err != nil {
+			t.Errorf("imageConfig returned error: %s", err)
+		}
+
+		if !reflect.DeepEqual(result, this.expected) {
+			t.Errorf("[%d] imageConfig: expected '%v', got '%v'", i, this.expected, result)
+		}
+
+		if len(defaultImageConfigCache.config) == 0 {
+			t.Error("defaultImageConfigCache should have at least 1 item")
+		}
+	}
+
+	if _, err := imageConfig(t); err == nil {
+		t.Error("Expected error from imageConfig when passed invalid path")
+	}
+
+	if _, err := imageConfig("non-existent.png"); err == nil {
+		t.Error("Expected error from imageConfig when passed non-existent file")
+	}
+
+	if _, err := imageConfig(""); err == nil {
+		t.Error("Expected error from imageConfig when passed empty path")
+	}
+
+	// test cache clearing
+	ResetCaches()
+
+	if len(defaultImageConfigCache.config) != 0 {
+		t.Error("ResetCaches should have cleared defaultImageConfigCache")
+	}
+}
+
 func TestIn(t *testing.T) {
 	for i, this := range []struct {
 		v1     interface{}
@@ -673,6 +826,33 @@ func TestSlicestr(t *testing.T) {
 	}
 }
 
+func TestHasPrefix(t *testing.T) {
+	cases := []struct {
+		s      interface{}
+		prefix interface{}
+		want   interface{}
+		isErr  bool
+	}{
+		{"abcd", "ab", true, false},
+		{"abcd", "cd", false, false},
+		{template.HTML("abcd"), "ab", true, false},
+		{template.HTML("abcd"), "cd", false, false},
+		{template.HTML("1234"), 12, true, false},
+		{template.HTML("1234"), 34, false, false},
+		{[]byte("abcd"), "ab", true, false},
+	}
+
+	for i, c := range cases {
+		res, err := hasPrefix(c.s, c.prefix)
+		if (err != nil) != c.isErr {
+			t.Fatalf("[%d] unexpected isErr state: want %v, got %v, err = %v", i, c.isErr, err != nil, err)
+		}
+		if res != c.want {
+			t.Errorf("[%d] want %v, got %v", i, c.want, res)
+		}
+	}
+}
+
 func TestSubstr(t *testing.T) {
 	var err error
 	var n int
@@ -758,7 +938,7 @@ func TestSplit(t *testing.T) {
 	}{
 		{"a, b", ", ", []string{"a", "b"}},
 		{"a & b & c", " & ", []string{"a", "b", "c"}},
-		{"http://exmaple.com", "http://", []string{"", "exmaple.com"}},
+		{"http://example.com", "http://", []string{"", "example.com"}},
 		{123, "2", []string{"1", "3"}},
 		{tstNoStringer{}, ",", false},
 	} {
@@ -852,7 +1032,7 @@ func (x TstX) MethodWithArg(s string) string {
 func (x TstX) MethodReturnNothing() {}
 
 func (x TstX) MethodReturnErrorOnly() error {
-	return errors.New("something error occured")
+	return errors.New("some error occurred")
 }
 
 func (x TstX) MethodReturnTwoValues() (string, string) {
@@ -860,7 +1040,7 @@ func (x TstX) MethodReturnTwoValues() (string, string) {
 }
 
 func (x TstX) MethodReturnValueWithError() (string, error) {
-	return "", errors.New("something error occured")
+	return "", errors.New("some error occurred")
 }
 
 func (x TstX) String() string {
@@ -1405,6 +1585,29 @@ func TestWhere(t *testing.T) {
 			key: "B", op: "op", match: "f",
 			expect: false,
 		},
+		{
+			sequence: map[string]interface{}{
+				"foo": []interface{}{map[interface{}]interface{}{"a": 1, "b": 2}},
+				"bar": []interface{}{map[interface{}]interface{}{"a": 3, "b": 4}},
+				"zap": []interface{}{map[interface{}]interface{}{"a": 5, "b": 6}},
+			},
+			key: "b", op: "in", match: slice(3, 4, 5),
+			expect: map[string]interface{}{
+				"bar": []interface{}{map[interface{}]interface{}{"a": 3, "b": 4}},
+			},
+		},
+		{
+			sequence: map[string]interface{}{
+				"foo": []interface{}{map[interface{}]interface{}{"a": 1, "b": 2}},
+				"bar": []interface{}{map[interface{}]interface{}{"a": 3, "b": 4}},
+				"zap": []interface{}{map[interface{}]interface{}{"a": 5, "b": 6}},
+			},
+			key: "b", op: ">", match: 3,
+			expect: map[string]interface{}{
+				"bar": []interface{}{map[interface{}]interface{}{"a": 3, "b": 4}},
+				"zap": []interface{}{map[interface{}]interface{}{"a": 5, "b": 6}},
+			},
+		},
 	} {
 		var results interface{}
 		var err error
@@ -1733,6 +1936,8 @@ func TestReturnWhenSet(t *testing.T) {
 }
 
 func TestMarkdownify(t *testing.T) {
+	viper.Set("currentContentLanguage", helpers.NewDefaultLanguage())
+
 	for i, this := range []struct {
 		in     interface{}
 		expect interface{}
@@ -1742,50 +1947,56 @@ func TestMarkdownify(t *testing.T) {
 	} {
 		result, err := markdownify(this.in)
 		if err != nil {
-			t.Fatalf("[%d] unexpected error in markdownify", i, err)
+			t.Fatalf("[%d] unexpected error in markdownify: %s", i, err)
 		}
 		if !reflect.DeepEqual(result, this.expect) {
 			t.Errorf("[%d] markdownify got %v (type %v) but expected %v (type %v)", i, result, reflect.TypeOf(result), this.expect, reflect.TypeOf(this.expect))
 		}
 	}
 
+	if _, err := markdownify(t); err == nil {
+		t.Fatalf("markdownify should have errored")
+	}
 }
 
 func TestApply(t *testing.T) {
+
+	f := newTestFuncster()
+
 	strings := []interface{}{"a\n", "b\n"}
 	noStringers := []interface{}{tstNoStringer{}, tstNoStringer{}}
 
-	chomped, _ := apply(strings, "chomp", ".")
+	chomped, _ := f.apply(strings, "chomp", ".")
 	assert.Equal(t, []interface{}{template.HTML("a"), template.HTML("b")}, chomped)
 
-	chomped, _ = apply(strings, "chomp", "c\n")
+	chomped, _ = f.apply(strings, "chomp", "c\n")
 	assert.Equal(t, []interface{}{template.HTML("c"), template.HTML("c")}, chomped)
 
-	chomped, _ = apply(nil, "chomp", ".")
+	chomped, _ = f.apply(nil, "chomp", ".")
 	assert.Equal(t, []interface{}{}, chomped)
 
-	_, err := apply(strings, "apply", ".")
+	_, err := f.apply(strings, "apply", ".")
 	if err == nil {
 		t.Errorf("apply with apply should fail")
 	}
 
 	var nilErr *error
-	_, err = apply(nilErr, "chomp", ".")
+	_, err = f.apply(nilErr, "chomp", ".")
 	if err == nil {
 		t.Errorf("apply with nil in seq should fail")
 	}
 
-	_, err = apply(strings, "dobedobedo", ".")
+	_, err = f.apply(strings, "dobedobedo", ".")
 	if err == nil {
 		t.Errorf("apply with unknown func should fail")
 	}
 
-	_, err = apply(noStringers, "chomp", ".")
+	_, err = f.apply(noStringers, "chomp", ".")
 	if err == nil {
 		t.Errorf("apply when func fails should fail")
 	}
 
-	_, err = apply(tstNoStringer{}, "chomp", ".")
+	_, err = f.apply(tstNoStringer{}, "chomp", ".")
 	if err == nil {
 		t.Errorf("apply with non-sequence should fail")
 	}
@@ -1809,6 +2020,75 @@ func TestChomp(t *testing.T) {
 
 		if err == nil {
 			t.Errorf("Chomp should fail")
+		}
+	}
+}
+
+func TestLower(t *testing.T) {
+	cases := []struct {
+		s     interface{}
+		want  string
+		isErr bool
+	}{
+		{"TEST", "test", false},
+		{template.HTML("LoWeR"), "lower", false},
+		{[]byte("BYTES"), "bytes", false},
+	}
+
+	for i, c := range cases {
+		res, err := lower(c.s)
+		if (err != nil) != c.isErr {
+			t.Fatalf("[%d] unexpected isErr state: want %v, got %v, err = %v", i, c.want, (err != nil), err)
+		}
+
+		if res != c.want {
+			t.Errorf("[%d] lower failed: want %v, got %v", i, c.want, res)
+		}
+	}
+}
+
+func TestTitle(t *testing.T) {
+	cases := []struct {
+		s     interface{}
+		want  string
+		isErr bool
+	}{
+		{"test", "Test", false},
+		{template.HTML("hypertext"), "Hypertext", false},
+		{[]byte("bytes"), "Bytes", false},
+	}
+
+	for i, c := range cases {
+		res, err := title(c.s)
+		if (err != nil) != c.isErr {
+			t.Fatalf("[%d] unexpected isErr state: want %v, got %v, err = %v", i, c.want, (err != nil), err)
+		}
+
+		if res != c.want {
+			t.Errorf("[%d] title failed: want %v, got %v", i, c.want, res)
+		}
+	}
+}
+
+func TestUpper(t *testing.T) {
+	cases := []struct {
+		s     interface{}
+		want  string
+		isErr bool
+	}{
+		{"test", "TEST", false},
+		{template.HTML("UpPeR"), "UPPER", false},
+		{[]byte("bytes"), "BYTES", false},
+	}
+
+	for i, c := range cases {
+		res, err := upper(c.s)
+		if (err != nil) != c.isErr {
+			t.Fatalf("[%d] unexpected isErr state: want %v, got %v, err = %v", i, c.want, (err != nil), err)
+		}
+
+		if res != c.want {
+			t.Errorf("[%d] upper failed: want %v, got %v", i, c.want, res)
 		}
 	}
 }
@@ -1910,14 +2190,17 @@ func TestReplace(t *testing.T) {
 
 func TestReplaceRE(t *testing.T) {
 	for i, val := range []struct {
-		pattern string
-		repl    string
-		src     string
+		pattern interface{}
+		repl    interface{}
+		src     interface{}
 		expect  string
 		ok      bool
 	}{
 		{"^https?://([^/]+).*", "$1", "http://gohugo.io/docs", "gohugo.io", true},
 		{"^https?://([^/]+).*", "$2", "http://gohugo.io/docs", "", true},
+		{tstNoStringer{}, "$2", "http://gohugo.io/docs", "", false},
+		{"^https?://([^/]+).*", tstNoStringer{}, "http://gohugo.io/docs", "", false},
+		{"^https?://([^/]+).*", "$2", tstNoStringer{}, "", false},
 		{"(ab)", "AB", "aabbaab", "aABbaAB", true},
 		{"(ab", "AB", "aabb", "", false}, // invalid re
 	} {
@@ -1932,7 +2215,7 @@ func TestReplaceRE(t *testing.T) {
 func TestFindRE(t *testing.T) {
 	for i, this := range []struct {
 		expr    string
-		content string
+		content interface{}
 		limit   int
 		expect  []string
 		ok      bool
@@ -1942,8 +2225,19 @@ func TestFindRE(t *testing.T) {
 		{"[G|g]o", "Hugo is a static site generator written in Go.", 1, []string{"go"}, true},
 		{"[G|g]o", "Hugo is a static site generator written in Go.", 0, []string(nil), true},
 		{"[G|go", "Hugo is a static site generator written in Go.", 0, []string(nil), false},
+		{"[G|g]o", t, 0, []string(nil), false},
 	} {
-		res, err := findRE(this.expr, this.content, this.limit)
+		var (
+			res []string
+			err error
+		)
+
+		if this.limit >= 0 {
+			res, err = findRE(this.expr, this.content, this.limit)
+
+		} else {
+			res, err = findRE(this.expr, this.content)
+		}
 
 		if err != nil && this.ok {
 			t.Errorf("[%d] returned an unexpected error: %s", i, err)
@@ -1992,7 +2286,8 @@ func TestDateFormat(t *testing.T) {
 		{"Monday, Jan 2, 2006", "2015-01-21", "Wednesday, Jan 21, 2015"},
 		{"Monday, Jan 2, 2006", time.Date(2015, time.January, 21, 0, 0, 0, 0, time.UTC), "Wednesday, Jan 21, 2015"},
 		{"This isn't a date layout string", "2015-01-21", "This isn't a date layout string"},
-		{"Monday, Jan 2, 2006", 1421733600, false},
+		// The following test case gives either "Tuesday, Jan 20, 2015" or "Monday, Jan 19, 2015" depending on the local time zone
+		{"Monday, Jan 2, 2006", 1421733600, time.Unix(1421733600, 0).Format("Monday, Jan 2, 2006")},
 		{"Monday, Jan 2, 2006", 1421733600.123, false},
 		{time.RFC3339, time.Date(2016, time.March, 3, 4, 5, 0, 0, time.UTC), "2016-03-03T04:05:00Z"},
 		{time.RFC1123, time.Date(2016, time.March, 3, 4, 5, 0, 0, time.UTC), "Thu, 03 Mar 2016 04:05:00 UTC"},
@@ -2002,7 +2297,7 @@ func TestDateFormat(t *testing.T) {
 		result, err := dateFormat(this.layout, this.value)
 		if b, ok := this.expect.(bool); ok && !b {
 			if err == nil {
-				t.Errorf("[%d] DateFormat didn't return an expected error", i)
+				t.Errorf("[%d] DateFormat didn't return an expected error, got %v", i, result)
 			}
 		} else {
 			if err != nil {
@@ -2086,7 +2381,7 @@ func TestDefault(t *testing.T) {
 		{map[string]string{"foo": "dog"}, `{{ default "nope" .foo "extra" }}`, ``, false},
 		{map[string]interface{}{"images": []string{}}, `{{ default "default.jpg" (index .images 0) }}`, `default.jpg`, true},
 	} {
-		tmpl, err := New().New("test").Parse(this.tpl)
+		tmpl, err := New(logger).New("test").Parse(this.tpl)
 		if err != nil {
 			t.Errorf("[%d] unable to create new html template %q: %s", i, this.tpl, err)
 			continue
@@ -2364,11 +2659,11 @@ func TestMD5(t *testing.T) {
 		if result != this.expectedHash {
 			t.Errorf("[%d] md5: expected '%s', got '%s'", i, this.expectedHash, result)
 		}
+	}
 
-		_, err = md5(t)
-		if err == nil {
-			t.Error("Expected error from md5")
-		}
+	_, err := md5(t)
+	if err == nil {
+		t.Error("Expected error from md5")
 	}
 }
 
@@ -2388,11 +2683,35 @@ func TestSHA1(t *testing.T) {
 		if result != this.expectedHash {
 			t.Errorf("[%d] sha1: expected '%s', got '%s'", i, this.expectedHash, result)
 		}
+	}
 
-		_, err = sha1(t)
-		if err == nil {
-			t.Error("Expected error from sha1")
+	_, err := sha1(t)
+	if err == nil {
+		t.Error("Expected error from sha1")
+	}
+}
+
+func TestSHA256(t *testing.T) {
+	for i, this := range []struct {
+		input        string
+		expectedHash string
+	}{
+		{"Hello world, gophers!", "6ec43b78da9669f50e4e422575c54bf87536954ccd58280219c393f2ce352b46"},
+		{"Lorem ipsum dolor", "9b3e1beb7053e0f900a674dd1c99aca3355e1275e1b03d3cb1bc977f5154e196"},
+	} {
+		result, err := sha256(this.input)
+		if err != nil {
+			t.Errorf("sha256 returned error: %s", err)
 		}
+
+		if result != this.expectedHash {
+			t.Errorf("[%d] sha256: expected '%s', got '%s'", i, this.expectedHash, result)
+		}
+	}
+
+	_, err := sha256(t)
+	if err == nil {
+		t.Error("Expected error from sha256")
 	}
 }
 
@@ -2402,7 +2721,7 @@ func TestReadFile(t *testing.T) {
 
 	workingDir := "/home/hugo"
 
-	viper.Set("WorkingDir", workingDir)
+	viper.Set("workingDir", workingDir)
 
 	fs := &afero.MemMapFs{}
 	hugofs.InitFs(fs)
@@ -2435,4 +2754,143 @@ func TestReadFile(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestPartialCached(t *testing.T) {
+	testCases := []struct {
+		name    string
+		partial string
+		tmpl    string
+		variant string
+	}{
+		// name and partial should match between test cases.
+		{"test1", "{{ .Title }} seq: {{ shuffle (seq 1 20) }}", `{{ partialCached "test1" . }}`, ""},
+		{"test1", "{{ .Title }} seq: {{ shuffle (seq 1 20) }}", `{{ partialCached "test1" . "%s" }}`, "header"},
+		{"test1", "{{ .Title }} seq: {{ shuffle (seq 1 20) }}", `{{ partialCached "test1" . "%s" }}`, "footer"},
+		{"test1", "{{ .Title }} seq: {{ shuffle (seq 1 20) }}", `{{ partialCached "test1" . "%s" }}`, "header"},
+	}
+
+	results := make(map[string]string, len(testCases))
+
+	var data struct {
+		Title   string
+		Section string
+		Params  map[string]interface{}
+	}
+
+	data.Title = "**BatMan**"
+	data.Section = "blog"
+	data.Params = map[string]interface{}{"langCode": "en"}
+
+	tstInitTemplates()
+	for i, tc := range testCases {
+		var tmp string
+		if tc.variant != "" {
+			tmp = fmt.Sprintf(tc.tmpl, tc.variant)
+		} else {
+			tmp = tc.tmpl
+		}
+
+		tmpl, err := New(logger).New("testroot").Parse(tmp)
+		if err != nil {
+			t.Fatalf("[%d] unable to create new html template: %s", i, err)
+		}
+
+		if tmpl == nil {
+			t.Fatalf("[%d] tmpl should not be nil!", i)
+		}
+
+		tmpl.New("partials/" + tc.name).Parse(tc.partial)
+
+		buf := new(bytes.Buffer)
+		err = tmpl.Execute(buf, &data)
+		if err != nil {
+			t.Fatalf("[%d] error executing template: %s", i, err)
+		}
+
+		for j := 0; j < 10; j++ {
+			buf2 := new(bytes.Buffer)
+			err = tmpl.Execute(buf2, nil)
+			if err != nil {
+				t.Fatalf("[%d] error executing template 2nd time: %s", i, err)
+			}
+
+			if !reflect.DeepEqual(buf, buf2) {
+				t.Fatalf("[%d] cached results do not match:\nResult 1:\n%q\nResult 2:\n%q", i, buf, buf2)
+			}
+		}
+
+		// double-check against previous test cases of the same variant
+		previous, ok := results[tc.name+tc.variant]
+		if !ok {
+			results[tc.name+tc.variant] = buf.String()
+		} else {
+			if previous != buf.String() {
+				t.Errorf("[%d] cached variant differs from previous rendering; got:\n%q\nwant:\n%q", i, buf.String(), previous)
+			}
+		}
+	}
+}
+
+func BenchmarkPartial(b *testing.B) {
+	tstInitTemplates()
+	tmpl, err := New(logger).New("testroot").Parse(`{{ partial "bench1" . }}`)
+	if err != nil {
+		b.Fatalf("unable to create new html template: %s", err)
+	}
+
+	tmpl.New("partials/bench1").Parse(`{{ shuffle (seq 1 10) }}`)
+	buf := new(bytes.Buffer)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err = tmpl.Execute(buf, nil); err != nil {
+			b.Fatalf("error executing template: %s", err)
+		}
+		buf.Reset()
+	}
+}
+
+func BenchmarkPartialCached(b *testing.B) {
+	tstInitTemplates()
+	tmpl, err := New(logger).New("testroot").Parse(`{{ partialCached "bench1" . }}`)
+	if err != nil {
+		b.Fatalf("unable to create new html template: %s", err)
+	}
+
+	tmpl.New("partials/bench1").Parse(`{{ shuffle (seq 1 10) }}`)
+	buf := new(bytes.Buffer)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err = tmpl.Execute(buf, nil); err != nil {
+			b.Fatalf("error executing template: %s", err)
+		}
+		buf.Reset()
+	}
+}
+
+func BenchmarkPartialCachedVariants(b *testing.B) {
+	tmpl, err := New(logger).New("testroot").Parse(`{{ partialCached "bench1" . "header" }}`)
+	if err != nil {
+		b.Fatalf("unable to create new html template: %s", err)
+	}
+
+	tmpl.New("partials/bench1").Parse(`{{ shuffle (seq 1 10) }}`)
+	buf := new(bytes.Buffer)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err = tmpl.Execute(buf, nil); err != nil {
+			b.Fatalf("error executing template: %s", err)
+		}
+		buf.Reset()
+	}
+}
+
+func newTestFuncster() *templateFuncster {
+	return New(logger).funcster
 }

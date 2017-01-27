@@ -39,12 +39,13 @@ func init() {
 
 type AliasPublisher interface {
 	Translator
-	Publish(string, string) error
+	Publish(path string, permalink string, page interface{}) error
 }
 
 type HTMLRedirectAlias struct {
 	PublishDir string
 	Templates  *template.Template
+	AllowRoot  bool // for the language redirects
 }
 
 func (h *HTMLRedirectAlias) Translate(alias string) (aliasPath string, err error) {
@@ -56,7 +57,7 @@ func (h *HTMLRedirectAlias) Translate(alias string) (aliasPath string, err error
 	alias = filepath.Clean(alias)
 	components := strings.Split(alias, helpers.FilePathSeparator)
 
-	if alias == helpers.FilePathSeparator {
+	if !h.AllowRoot && alias == helpers.FilePathSeparator {
 		return "", fmt.Errorf("Alias \"%s\" resolves to website root directory", originalAlias)
 	}
 
@@ -69,7 +70,7 @@ func (h *HTMLRedirectAlias) Translate(alias string) (aliasPath string, err error
 	// See "Naming Files, Paths, and Namespaces" on MSDN
 	// https://msdn.microsoft.com/en-us/library/aa365247%28v=VS.85%29.aspx?f=255&MSPPError=-2147217396
 	msgs := []string{}
-	reservedNames := []string{"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}
+	reservedNames := []string{"CON", "PRN", "AUX", "NUL", "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}
 
 	if strings.ContainsAny(alias, ":*?\"<>|") {
 		msgs = append(msgs, fmt.Sprintf("Alias \"%s\" contains invalid characters on Windows: : * ? \" < > |", originalAlias))
@@ -103,9 +104,7 @@ func (h *HTMLRedirectAlias) Translate(alias string) (aliasPath string, err error
 	}
 
 	// Add the final touch
-	if strings.HasPrefix(alias, helpers.FilePathSeparator) {
-		alias = alias[1:]
-	}
+	alias = strings.TrimPrefix(alias, helpers.FilePathSeparator)
 	if strings.HasSuffix(alias, helpers.FilePathSeparator) {
 		alias = alias + "index.html"
 	} else if !strings.HasSuffix(alias, ".html") {
@@ -120,9 +119,10 @@ func (h *HTMLRedirectAlias) Translate(alias string) (aliasPath string, err error
 
 type AliasNode struct {
 	Permalink string
+	Page      interface{}
 }
 
-func (h *HTMLRedirectAlias) Publish(path string, permalink string) (err error) {
+func (h *HTMLRedirectAlias) Publish(path string, permalink string, page interface{}) (err error) {
 	if path, err = h.Translate(path); err != nil {
 		jww.ERROR.Printf("%s, skipping.", err)
 		return nil
@@ -136,10 +136,11 @@ func (h *HTMLRedirectAlias) Publish(path string, permalink string) (err error) {
 	template := defaultAliasTemplates
 	if h.Templates != nil {
 		template = h.Templates
+		t = "alias.html"
 	}
 
 	buffer := new(bytes.Buffer)
-	err = template.ExecuteTemplate(buffer, t, &AliasNode{permalink})
+	err = template.ExecuteTemplate(buffer, t, &AliasNode{permalink, page})
 	if err != nil {
 		return
 	}

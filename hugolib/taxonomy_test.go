@@ -14,27 +14,15 @@
 package hugolib
 
 import (
-	"strings"
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/spf13/viper"
 )
 
-func TestSitePossibleTaxonomies(t *testing.T) {
-	site := new(Site)
-	page, _ := NewPageFrom(strings.NewReader(pageYamlWithTaxonomiesA), "path/to/page")
-	site.Pages = append(site.Pages, page)
-	taxonomies := site.possibleTaxonomies()
-	if !compareStringSlice(taxonomies, []string{"tags", "categories"}) {
-		if !compareStringSlice(taxonomies, []string{"categories", "tags"}) {
-			t.Fatalf("possible taxonomies do not match [tags categories].  Got: %s", taxonomies)
-		}
-	}
-}
-
 func TestByCountOrderOfTaxonomies(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	defer testCommonResetState()
 
 	taxonomies := make(map[string]string)
 
@@ -43,17 +31,20 @@ func TestByCountOrderOfTaxonomies(t *testing.T) {
 
 	viper.Set("taxonomies", taxonomies)
 
-	site := new(Site)
-	page, _ := NewPageFrom(strings.NewReader(pageYamlWithTaxonomiesA), "path/to/page")
-	site.Pages = append(site.Pages, page)
-	site.assembleTaxonomies()
+	writeSource(t, filepath.Join("content", "page.md"), pageYamlWithTaxonomiesA)
+
+	site := NewSiteDefaultLang()
+
+	if err := buildSiteSkipRender(site); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
+	}
 
 	st := make([]string, 0)
 	for _, t := range site.Taxonomies["tags"].ByCount() {
 		st = append(st, t.Name)
 	}
 
-	if !compareStringSlice(st, []string{"a", "b", "c"}) {
+	if !reflect.DeepEqual(st, []string{"a", "b", "c"}) {
 		t.Fatalf("ordered taxonomies do not match [a, b, c].  Got: %s", st)
 	}
 }

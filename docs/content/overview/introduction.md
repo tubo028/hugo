@@ -1,5 +1,5 @@
 ---
-lastmod: 2016-02-20
+lastmod: 2016-08-14
 date: 2013-07-01
 linktitle: Introduction
 menu:
@@ -21,20 +21,23 @@ writing experience.
 
 Sites built with Hugo are extremely fast and very secure. Hugo sites can
 be hosted anywhere, including [Heroku][], [GoDaddy][], [DreamHost][],
-[GitHub Pages][], [Surge][], [Aerobatic][], [Google Cloud Storage][],
-[Amazon S3][] and [CloudFront][], and work well with CDNs.
-Hugo sites run without dependencies on expensive runtimes like Ruby,
-Python or PHP and without dependencies on any databases.
+[GitHub Pages][], [Netlify][], [Surge][], [Aerobatic][], [Firebase Hosting][],
+[Google Cloud Storage][], [Amazon S3][] and [CloudFront][], and work well
+with CDNs. Hugo sites run without dependencies on expensive runtimes
+like Ruby, Python or PHP and without dependencies on any databases.
 
 [Heroku]: https://www.heroku.com/
 [GoDaddy]: https://www.godaddy.com/
 [DreamHost]: http://www.dreamhost.com/
+[GitLab]: https://about.gitlab.com
 [GitHub Pages]: https://pages.github.com/
 [Aerobatic]: https://www.aerobatic.com/
+[Firebase Hosting]: https://firebase.google.com/docs/hosting/
 [Google Cloud Storage]: http://cloud.google.com/storage/
 [Amazon S3]: http://aws.amazon.com/s3/
 [CloudFront]: http://aws.amazon.com/cloudfront/ "Amazon CloudFront"
 [Surge]: https://surge.sh
+[Netlify]: https://www.netlify.com
 
 We think of Hugo as the ideal website creation tool. With nearly instant
 build times and the ability to rebuild whenever a change is made, Hugo
@@ -78,7 +81,7 @@ can see what the pages look like.
 
 The second component is used when you're ready to publish your web
 site to the computer running your website. Running Hugo without any
-actions will rebuild your entire web site using the `baseurl` setting
+actions will rebuild your entire web site using the `baseURL` setting
 from your site's configuration file. That's required to have your page
 links work properly with most hosting companies.
 
@@ -132,7 +135,7 @@ Hugo boasts the following features:
   * Integrated [Disqus](https://disqus.com/) comment support
   * Integrated [Google Analytics](https://google-analytics.com/) support
   * Automatic [RSS](/layout/rss/) creation
-  * Support for [Go](http://golang.org/pkg/html/template/), [Amber](https://github.com/eknkc/amber) and [Ace](http://ace.yoss.si/) HTML templates
+  * Support for [Go](http://golang.org/pkg/html/template/), [Amber](https://github.com/eknkc/amber) and [Ace](https://github.com/yosssi/ace) HTML templates
   * Syntax [highlighting](/extras/highlighting/) powered by [Pygments](http://pygments.org/)
 
 See what's coming next in the [roadmap](/meta/roadmap/).
@@ -153,30 +156,35 @@ pages.
 ## Why did you write Hugo?
 
 I wrote Hugo ultimately for a few reasons. First, I was disappointed with
-WordPress, my then website solution. It rendered slowly. I couldn't create
-content as efficiently as I wanted to and needed to be online to write
-posts. The constant security updates and the horror stories of people's
-hacked blogs. I hated how content was written in HTML instead of the much
-simpler Markdown. Overall, I felt like it got in my way more than it helped
+WordPress, my then website solution. With it, I couldn't create
+content as efficiently as I wanted to.
+It rendered slowly. It required me to be online to write
+posts: plus its constant security updates and the horror stories of people's
+hacked blogs! I hated how content for it was written only in HTML, instead of the much
+simpler Markdown. Overall, I felt like WordPress got in my way
+much more than it helped me. It kept
 me from writing great content.
 
-I looked at existing static site generators like [Jekyll][], [Middleman][] and [nanoc][].
-All had complicated dependencies to install and took far longer to render
-my blog with hundreds of posts than I felt was acceptable. I wanted
-a framework to be able to get rapid feedback while making changes to the
-templates, and the 5+-minute render times was just too slow. In general,
-they were also very blog minded and didn't have the ability to have
-different content types and flexible URLs.
+I looked at the existing static site generators
+like [Jekyll][], [Middleman][] and [Nanoc][].
+All had complicated installation dependencies and took far longer to render
+my blog with its hundreds of posts than I felt was acceptable. I wanted
+a framework to be able to give me rapid feedback while making changes to the
+templates, and the 5+-minute render times were just too slow. In general,
+they were also very blog minded and didn't have the ability to provide
+other content types and flexible URLs.
 
 [Jekyll]: http://jekyllrb.com/
 [Middleman]: https://middlemanapp.com/
-[nanoc]: http://nanoc.ws/
+[Nanoc]: http://nanoc.ws/
 
-I wanted to develop a fast and full-featured website framework without
-dependencies. The [Go language][] seemed to have all of the features I needed
+I wanted to develop a fast and full-featured website framework without any
+dependencies. The [Go language][] seemed to have all the features I needed
 in a language. I began developing Hugo in Go and fell in love with the
-language. I hope you will enjoy using (and contributing to) Hugo as much
+language. I hope you will enjoy using Hugo (and contributing to it) as much
 as I have writing it.
+
+&mdash;Steve Francia (@spf13)
 
 [Go language]: http://golang.org/ "The Go Programming Language"
 

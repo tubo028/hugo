@@ -17,11 +17,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/hugo/helpers"
+
 	"html/template"
 
 	"github.com/spf13/hugo/hugofs"
 	"github.com/spf13/hugo/source"
-	"github.com/spf13/hugo/target"
 	"github.com/spf13/viper"
 )
 
@@ -42,26 +43,14 @@ func must(err error) {
 	}
 }
 
-type InMemoryAliasTarget struct {
-	target.HTMLRedirectAlias
-	files map[string][]byte
-}
-
-func (t *InMemoryAliasTarget) Publish(label string, permalink template.HTML) (err error) {
-	f, _ := t.Translate(label)
-	t.files[f] = []byte("--dummy text--")
-	return
-}
-
 var urlFakeSource = []source.ByteSource{
-	{filepath.FromSlash("content/blue/doc1.md"), []byte(slugDoc1)},
-	{filepath.FromSlash("content/blue/doc2.md"), []byte(slugDoc2)},
+	{Name: filepath.FromSlash("content/blue/doc1.md"), Content: []byte(slugDoc1)},
+	{Name: filepath.FromSlash("content/blue/doc2.md"), Content: []byte(slugDoc2)},
 }
 
 // Issue #1105
 func TestShouldNotAddTrailingSlashToBaseURL(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	testCommonResetState()
 
 	for i, this := range []struct {
 		in       string
@@ -72,8 +61,8 @@ func TestShouldNotAddTrailingSlashToBaseURL(t *testing.T) {
 		{"http://base.com/sub", "http://base.com/sub"},
 		{"http://base.com", "http://base.com"}} {
 
-		viper.Set("BaseURL", this.in)
-		s := &Site{}
+		viper.Set("baseURL", this.in)
+		s := NewSiteDefaultLang()
 		s.initializeSiteInfo()
 
 		if s.Info.BaseURL != template.URL(this.expected) {
@@ -84,49 +73,30 @@ func TestShouldNotAddTrailingSlashToBaseURL(t *testing.T) {
 }
 
 func TestPageCount(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
-
+	testCommonResetState()
 	hugofs.InitMemFs()
 
-	viper.Set("uglyurls", false)
+	viper.Set("uglyURLs", false)
 	viper.Set("paginate", 10)
 	s := &Site{
-		Source: &source.InMemorySource{ByteSource: urlFakeSource},
-	}
-	s.initializeSiteInfo()
-	s.prepTemplates("indexes/blue.html", indexTemplate)
-
-	if err := s.createPages(); err != nil {
-		t.Errorf("Unable to create pages: %s", err)
-	}
-	if err := s.buildSiteMeta(); err != nil {
-		t.Errorf("Unable to build site metadata: %s", err)
+		deps:     newDeps(DepsCfg{}),
+		Source:   &source.InMemorySource{ByteSource: urlFakeSource},
+		Language: helpers.NewDefaultLanguage(),
 	}
 
-	if err := s.renderSectionLists(); err != nil {
-		t.Errorf("Unable to render section lists: %s", err)
+	if err := buildAndRenderSite(s, "indexes/blue.html", indexTemplate); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
 	}
-
-	if err := s.renderAliases(); err != nil {
-		t.Errorf("Unable to render site lists: %s", err)
-	}
-
-	_, err := hugofs.Destination().Open("blue")
+	_, err := hugofs.Destination().Open("public/blue")
 	if err != nil {
 		t.Errorf("No indexed rendered.")
 	}
 
-	//expected := ".."
-	//if string(blueIndex) != expected {
-	//t.Errorf("Index template does not match expected: %q, got: %q", expected, string(blueIndex))
-	//}
-
 	for _, s := range []string{
-		"sd1/foo/index.html",
-		"sd2/index.html",
-		"sd3/index.html",
-		"sd4.html",
+		"public/sd1/foo/index.html",
+		"public/sd2/index.html",
+		"public/sd3/index.html",
+		"public/sd4.html",
 	} {
 		if _, err := hugofs.Destination().Open(filepath.FromSlash(s)); err != nil {
 			t.Errorf("No alias rendered: %s", s)

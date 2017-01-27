@@ -23,7 +23,7 @@ import (
 
 // Renders a codeblock using Blackfriday
 func render(input string) string {
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	render := getHTMLRenderer(0, ctx)
 
 	buf := &bytes.Buffer{}
@@ -33,7 +33,7 @@ func render(input string) string {
 
 // Renders a codeblock using Mmark
 func renderWithMmark(input string) string {
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	render := getMmarkHTMLRenderer(0, ctx)
 
 	buf := &bytes.Buffer{}
@@ -62,11 +62,11 @@ func TestCodeFence(t *testing.T) {
 	viper.Reset()
 	defer viper.Reset()
 
-	viper.Set("PygmentsStyle", "monokai")
-	viper.Set("PygmentsUseClasses", true)
+	viper.Set("pygmentsStyle", "monokai")
+	viper.Set("pygmentsUseClasses", true)
 
 	for i, d := range data {
-		viper.Set("PygmentsCodeFences", d.enabled)
+		viper.Set("pygmentsCodeFences", d.enabled)
 
 		result := render(d.input)
 
@@ -85,6 +85,47 @@ func TestCodeFence(t *testing.T) {
 		matched = expectedRe.MatchString(result)
 		if !matched {
 			t.Errorf("Test %d failed. Mmark enabled:%t, Expected:\n%q got:\n%q", i, d.enabled, d.expected, result)
+		}
+	}
+}
+
+func TestBlackfridayTaskList(t *testing.T) {
+	for i, this := range []struct {
+		markdown        string
+		taskListEnabled bool
+		expect          string
+	}{
+		{`
+TODO:
+
+- [x] On1
+- [X] On2
+- [ ] Off
+
+END
+`, true, `<p>TODO:</p>
+
+<ul class="task-list">
+<li><input type="checkbox" checked disabled class="task-list-item"> On1</li>
+<li><input type="checkbox" checked disabled class="task-list-item"> On2</li>
+<li><input type="checkbox" disabled class="task-list-item"> Off</li>
+</ul>
+
+<p>END</p>
+`},
+		{`- [x] On1`, false, `<ul>
+<li>[x] On1</li>
+</ul>
+`},
+	} {
+		blackFridayConfig := NewBlackfriday(viper.GetViper())
+		blackFridayConfig.TaskLists = this.taskListEnabled
+		ctx := &RenderingContext{Content: []byte(this.markdown), PageFmt: "markdown", Config: blackFridayConfig}
+
+		result := string(RenderBytes(ctx))
+
+		if result != this.expect {
+			t.Errorf("[%d] got \n%v but expected \n%v", i, result, this.expect)
 		}
 	}
 }

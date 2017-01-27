@@ -18,16 +18,13 @@ A single Sitemap template is used to generate the `sitemap.xml` file.
 Hugo automatically comes with this template file. **No work is needed on
 the users' part unless they want to customize `sitemap.xml`.**
 
-This page is of the type "node" and have all the [node
+A sitemap is a `Page` and have all the [page
 variables](/layout/variables/) available to use in this template
 along with Sitemap-specific ones:
 
 **.Sitemap.ChangeFreq** The page change frequency<br>
 **.Sitemap.Priority** The priority of the page<br>
 **.Sitemap.Filename** The sitemap filename<br>
-
-In addition to the standard node variables, the homepage has access to all
-site pages through `.Data.Pages`.
 
 If provided, Hugo will use `/layouts/sitemap.xml` instead of the internal
 one.
@@ -40,8 +37,8 @@ Protocol](http://www.sitemaps.org/protocol.html).
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
       {{ range .Data.Pages }}
       <url>
-        <loc>{{ .Permalink }}</loc>
-        <lastmod>{{ safeHTML ( .Date.Format "2006-01-02T15:04:05-07:00" ) }}</lastmod>{{ with .Sitemap.ChangeFreq }}
+        <loc>{{ .Permalink }}</loc>{{ if not .Lastmod.IsZero }}
+        <lastmod>{{ safeHTML ( .Lastmod.Format "2006-01-02T15:04:05-07:00" ) }}</lastmod>{{ end }}{{ with .Sitemap.ChangeFreq }}
         <changefreq>{{ . }}</changefreq>{{ end }}{{ if ge .Sitemap.Priority 0.0 }}
         <priority>{{ .Sitemap.Priority }}</priority>{{ end }}
       </url>

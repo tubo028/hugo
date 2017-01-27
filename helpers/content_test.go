@@ -16,12 +16,12 @@ package helpers
 import (
 	"bytes"
 	"html/template"
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/miekg/mmark"
 	"github.com/russross/blackfriday"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -33,11 +33,22 @@ func TestStripHTML(t *testing.T) {
 	}
 	data := []test{
 		{"<h1>strip h1 tag <h1>", "strip h1 tag "},
-		{"<p> strip p tag </p>", " strip p tag \n"},
+		{"<p> strip p tag </p>", " strip p tag "},
 		{"</br> strip br<br>", " strip br\n"},
 		{"</br> strip br2<br />", " strip br2\n"},
 		{"This <strong>is</strong> a\nnewline", "This is a newline"},
 		{"No Tags", "No Tags"},
+		{`<p>Summary Next Line. 
+<figure >
+    
+        <img src="/not/real" />
+    
+    
+</figure>
+.
+More text here.</p>
+
+<p>Some more text</p>`, "Summary Next Line.  . More text here.\nSome more text\n"},
 	}
 	for i, d := range data {
 		output := StripHTML(d.input)
@@ -63,6 +74,22 @@ func TestBytesToHTML(t *testing.T) {
 	assert.Equal(t, template.HTML("dobedobedo"), BytesToHTML([]byte("dobedobedo")))
 }
 
+var benchmarkTruncateString = strings.Repeat("This is a sentence about nothing.", 20)
+
+func BenchmarkTestTruncateWordsToWholeSentence(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		TruncateWordsToWholeSentence(benchmarkTruncateString, SummaryLength)
+	}
+}
+
+func BenchmarkTestTruncateWordsToWholeSentenceOld(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		truncateWordsToWholeSentenceOld(benchmarkTruncateString, SummaryLength)
+	}
+}
+
 func TestTruncateWordsToWholeSentence(t *testing.T) {
 	type test struct {
 		input, expected string
@@ -76,10 +103,11 @@ func TestTruncateWordsToWholeSentence(t *testing.T) {
 		{"This is a sentence.", "This is a sentence.", 5, false},
 		{"This is also a sentence!", "This is also a sentence!", 1, false},
 		{"To be. Or not to be. That's the question.", "To be.", 1, true},
-		{" \nThis is not a sentence\n ", "This is not a", 4, true},
+		{" \nThis is not a sentence\nAnd this is another", "This is not a sentence", 4, true},
+		{"", "", 10, false},
 	}
 	for i, d := range data {
-		output, truncated := TruncateWordsToWholeSentence(strings.Fields(d.input), d.max)
+		output, truncated := TruncateWordsToWholeSentence(d.input, d.max)
 		if d.expected != output {
 			t.Errorf("Test %d failed. Expected %q got %q", i, d.expected, output)
 		}
@@ -124,7 +152,7 @@ func TestTruncateWordsByRune(t *testing.T) {
 }
 
 func TestGetHTMLRendererFlags(t *testing.T) {
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	renderer := getHTMLRenderer(blackfriday.HTML_USE_XHTML, ctx)
 	flags := renderer.GetFlags()
 	if flags&blackfriday.HTML_USE_XHTML != blackfriday.HTML_USE_XHTML {
@@ -148,7 +176,7 @@ func TestGetHTMLRendererAllFlags(t *testing.T) {
 		{blackfriday.HTML_SMARTYPANTS_LATEX_DASHES},
 	}
 	defaultFlags := blackfriday.HTML_USE_XHTML
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	ctx.Config = ctx.getConfig()
 	ctx.Config.AngledQuotes = true
 	ctx.Config.Fractions = true
@@ -171,7 +199,7 @@ func TestGetHTMLRendererAllFlags(t *testing.T) {
 }
 
 func TestGetHTMLRendererAnchors(t *testing.T) {
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	ctx.DocumentID = "testid"
 	ctx.Config = ctx.getConfig()
 	ctx.Config.PlainIDAnchors = false
@@ -195,7 +223,7 @@ func TestGetHTMLRendererAnchors(t *testing.T) {
 }
 
 func TestGetMmarkHTMLRenderer(t *testing.T) {
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	ctx.DocumentID = "testid"
 	ctx.Config = ctx.getConfig()
 	ctx.Config.PlainIDAnchors = false
@@ -219,7 +247,7 @@ func TestGetMmarkHTMLRenderer(t *testing.T) {
 }
 
 func TestGetMarkdownExtensionsMasksAreRemovedFromExtensions(t *testing.T) {
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	ctx.Config = ctx.getConfig()
 	ctx.Config.Extensions = []string{"headerId"}
 	ctx.Config.ExtensionsMask = []string{"noIntraEmphasis"}
@@ -234,7 +262,7 @@ func TestGetMarkdownExtensionsByDefaultAllExtensionsAreEnabled(t *testing.T) {
 	type data struct {
 		testFlag int
 	}
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	ctx.Config = ctx.getConfig()
 	ctx.Config.Extensions = []string{""}
 	ctx.Config.ExtensionsMask = []string{""}
@@ -266,7 +294,7 @@ func TestGetMarkdownExtensionsByDefaultAllExtensionsAreEnabled(t *testing.T) {
 }
 
 func TestGetMarkdownExtensionsAddingFlagsThroughRenderingContext(t *testing.T) {
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	ctx.Config = ctx.getConfig()
 	ctx.Config.Extensions = []string{"definitionLists"}
 	ctx.Config.ExtensionsMask = []string{""}
@@ -278,7 +306,7 @@ func TestGetMarkdownExtensionsAddingFlagsThroughRenderingContext(t *testing.T) {
 }
 
 func TestGetMarkdownRenderer(t *testing.T) {
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	ctx.Content = []byte("testContent")
 	ctx.Config = ctx.getConfig()
 	actualRenderedMarkdown := markdownRender(ctx)
@@ -289,7 +317,7 @@ func TestGetMarkdownRenderer(t *testing.T) {
 }
 
 func TestGetMarkdownRendererWithTOC(t *testing.T) {
-	ctx := &RenderingContext{RenderTOC: true}
+	ctx := &RenderingContext{RenderTOC: true, ConfigProvider: viper.GetViper()}
 	ctx.Content = []byte("testContent")
 	ctx.Config = ctx.getConfig()
 	actualRenderedMarkdown := markdownRender(ctx)
@@ -304,7 +332,7 @@ func TestGetMmarkExtensions(t *testing.T) {
 	type data struct {
 		testFlag int
 	}
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	ctx.Config = ctx.getConfig()
 	ctx.Config.Extensions = []string{"tables"}
 	ctx.Config.ExtensionsMask = []string{""}
@@ -333,7 +361,7 @@ func TestGetMmarkExtensions(t *testing.T) {
 }
 
 func TestMmarkRender(t *testing.T) {
-	ctx := &RenderingContext{}
+	ctx := newViperProvidedRenderingContext()
 	ctx.Content = []byte("testContent")
 	ctx.Config = ctx.getConfig()
 	actualRenderedMarkdown := mmarkRender(ctx)
@@ -390,31 +418,44 @@ func TestExtractNoTOC(t *testing.T) {
 	}
 }
 
+var totalWordsBenchmarkString = strings.Repeat("Hugo Rocks ", 200)
+
 func TestTotalWords(t *testing.T) {
-	testString := "Two, Words!"
-	actualWordCount := TotalWords(testString)
 
-	if actualWordCount != 2 {
-		t.Errorf("Actual word count (%d) for test string (%s) did not match 2.", actualWordCount, testString)
+	for i, this := range []struct {
+		s     string
+		words int
+	}{
+		{"Two, Words!", 2},
+		{"Word", 1},
+		{"", 0},
+		{"One, Two,      Three", 3},
+		{totalWordsBenchmarkString, 400},
+	} {
+		actualWordCount := TotalWords(this.s)
+
+		if actualWordCount != this.words {
+			t.Errorf("[%d] Actual word count (%d) for test string (%s) did not match %d", i, actualWordCount, this.s, this.words)
+		}
 	}
 }
 
-func TestWordCount(t *testing.T) {
-	testString := "Two, Words!"
-	expectedMap := map[string]int{"Two,": 1, "Words!": 1}
-	actualMap := WordCount(testString)
-
-	if !reflect.DeepEqual(expectedMap, actualMap) {
-		t.Errorf("Actual Map (%v) does not equal expected (%v)", actualMap, expectedMap)
+func BenchmarkTotalWords(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		wordCount := TotalWords(totalWordsBenchmarkString)
+		if wordCount != 400 {
+			b.Fatal("Wordcount error")
+		}
 	}
 }
 
-func TestRemoveSummaryDivider(t *testing.T) {
-	content := []byte("This is before. <!--more-->This is after.")
-	actualRemovedContent := RemoveSummaryDivider(content)
-	expectedRemovedContent := []byte("This is before. This is after.")
-
-	if !bytes.Equal(actualRemovedContent, expectedRemovedContent) {
-		t.Errorf("Actual removed content (%s) did not equal expected removed content (%s)", actualRemovedContent, expectedRemovedContent)
+func BenchmarkTotalWordsOld(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		wordCount := totalWordsOld(totalWordsBenchmarkString)
+		if wordCount != 400 {
+			b.Fatal("Wordcount error")
+		}
 	}
 }

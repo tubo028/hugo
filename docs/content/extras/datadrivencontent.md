@@ -6,10 +6,9 @@ date: 2015-02-14
 menu:
   main:
     parent: extras
-next: /extras/highlighting
+next: /extras/gitinfo
 prev: /extras/datafiles
 title: Data-driven Content
-weight: 91
 toc: true
 ---
 
@@ -102,6 +101,8 @@ temporary directory.
 
 With the command-line flag `--cacheDir`, you can specify any folder on
 your system as a caching directory.
+
+You can also set `cacheDir` in the main configuration file.
 
 If you don't like caching at all, you can fully disable caching with the
 command line flag `--ignoreCache`.

@@ -19,7 +19,7 @@ Like all other templates, you can use a single RSS template to generate all of y
 
 *Unlike other Hugo templates*, Hugo ships with its own [RSS 2.0 template](#the-embedded-rss-xml:eceb479b7b3b2077408a2878a29e1320). In most cases this will be sufficient, and an RSS template will not need to be provided by the user. But you can provide an rss template if you like, as you can see in the next section.
 
-RSS pages are of the **type "node"** and have all the [node variables](/layout/variables/) available to use in the templates.
+RSS pages are of the type `Page` and have all the [page variables](/layout/variables/) available to use in the templates.
 
 ## Which Template will be rendered?
 Hugo uses a set of rules to figure out which template to use when rendering a specific page.
@@ -99,15 +99,15 @@ This is the default RSS template that ships with Hugo. It adheres to the [RSS 2.
 In your `header.html` template, you can specify your RSS feed in your `<head></head>` tag like this:
 
 ~~~html
-{{ if .RSSlink }}
-  <link href="{{ .RSSlink }}" rel="alternate" type="application/rss+xml" title="{{ .Site.Title }}" />
-  <link href="{{ .RSSlink }}" rel="feed" type="application/rss+xml" title="{{ .Site.Title }}" />
+{{ if .RSSLink }}
+  <link href="{{ .RSSLink }}" rel="alternate" type="application/rss+xml" title="{{ .Site.Title }}" />
+  <link href="{{ .RSSLink }}" rel="feed" type="application/rss+xml" title="{{ .Site.Title }}" />
 {{ end }}
 ~~~
 
 ... with the autodiscovery link specified by the line with `rel="alternate"`.
 
-The `.RSSlink` will render the appropriate RSS feed URL for the section, whether it's everything, posts in a section, or a taxonomy.
+The `.RSSLink` will render the appropriate RSS feed URL for the section, whether it's everything, posts in a section, or a taxonomy.
 
 **N.b.**, if you reference your RSS link, be sure to specify the mime type with `type="application/rss+xml"`.
 

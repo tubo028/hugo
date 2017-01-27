@@ -14,11 +14,11 @@
 package commands
 
 import (
-	"fmt"
 	"reflect"
 	"sort"
 
 	"github.com/spf13/cobra"
+	jww "github.com/spf13/jwalterweatherman"
 	"github.com/spf13/viper"
 )
 
@@ -33,7 +33,7 @@ func init() {
 }
 
 func config(cmd *cobra.Command, args []string) error {
-	if err := InitializeConfig(configCmd); err != nil {
+	if _, err := InitializeConfig(configCmd); err != nil {
 		return err
 	}
 
@@ -54,9 +54,9 @@ func config(cmd *cobra.Command, args []string) error {
 	for _, k := range keys {
 		kv := reflect.ValueOf(allSettings[k])
 		if kv.Kind() == reflect.String {
-			fmt.Printf("%s%s\"%+v\"\n", k, separator, allSettings[k])
+			jww.FEEDBACK.Printf("%s%s\"%+v\"\n", k, separator, allSettings[k])
 		} else {
-			fmt.Printf("%s%s%+v\n", k, separator, allSettings[k])
+			jww.FEEDBACK.Printf("%s%s%+v\n", k, separator, allSettings[k])
 		}
 	}
 

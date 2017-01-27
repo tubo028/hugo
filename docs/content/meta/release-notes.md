@@ -2,7 +2,6 @@
 aliases:
 - /doc/release-notes/
 - /meta/release-notes/
-lastmod: 2016-03-12
 date: 2013-07-01
 menu:
   main:
@@ -10,6 +9,200 @@ menu:
 title: Release Notes
 weight: 10
 ---
+## **0.18.1** December 30th 2016
+
+Hugo 0.18.1 is a bug fix release fixing some issues introduced in Hugo 0.18:
+
+* Fix 32-bit binaries {{<gh 2847 >}}
+* Fix issues with `preserveTaxonomyNames` {{<gh 2809 >}}
+* Fix `.URL` for taxonomy pages when `uglyURLs=true` {{<gh 2819 >}}
+* Fix `IsTranslated` and `Translations` for node pages {{<gh 2812 >}}
+* Make template error messages more verbose {{<gh 2820 >}}
+
+## **0.18.0** December 19th 2016
+
+Today, we're excited to release the much-anticipated Hugo 0.18!
+
+We're heading towards the end of the year 2016, and we can look back on three releases and a steady growing community around the project.
+This release includes **over 220 contributions by nearly 50 contributors** to the main codebase.
+Since the last release, Hugo has **gained 1750 stars and 27 additional themes**.
+
+Hugo now has:
+
+- 13750+ stars
+- 408+ contributors
+- 137+ themes
+
+{{< gh "@bep" >}} once again took the lead of Hugo and contributed a significant amount of additions.
+Also a big shoutout to {{< gh "@digitalcraftsman" >}} for his relentless work on keeping the documentation and the themes site in pristine condition,
+and also a big thanks to {{< gh "@moorereason" >}} and {{< gh "@bogem" >}} for their contributions.
+
+We wish you all a Merry Christmas and a Happy New Year.<br>
+*The Hugo team*
+
+## Highlights
+
+The primary new feature in Hugo 0.18 is that every piece of content is now a `Page` ({{<gh 2297>}}).
+This means that every page, including the home page, can have a content file with frontmatter.
+Not only is this a much simpler model to understand, it is also faster and paved the way for several important new features:
+
+* Enable proper titles for Nodes {{<gh 1051>}}
+* Sitemap.xml should include nodes, as well as pages {{<gh 1303>}}
+* Document homepage content workaround {{<gh 2240>}}
+* Allow home page to be easily authored in markdown {{<gh 720>}}
+* Minimalist website with homepage as content {{<gh 330>}}
+
+Hugo again continues its trend of each release being faster than the last. It's quite a challenge to consistently add significant new functionality and simultaneously dramatically improve performance. Running [this benchmark]( https://github.com/bep/hugo-benchmark) with [these sites](https://github.com/bep/hugo-benchmark/tree/master/sites) (renders to memory) shows about	60% reduction in time spent and 30% reduction in memory usage compared to Hugo 0.17.
+
+## Other New Features
+
+* Every `Page` now has a `Kind` property. Since everything is a `Page` now, the `Kind` is used to differentiate different kinds of pages.
+  Possible values are `page`, `home`, `section`, `taxonomy`, and `taxonomyTerm`.
+  (Internally, we also define `RSS`, `sitemap`, `robotsTXT`, and `404`, but those have no practical use for end users at the moment since they are not included in any collections.)
+* Add a `GitInfo` object to `Page` if `enableGitInfo` is set. It then also sets `Lastmod` for the given `Page` to the author date provided by Git. {{<gh 2291>}}
+* Implement support for alias templates  {{<gh 2533 >}}
+* New template functions:
+  * Add `imageConfig` function {{<gh 2677>}}
+  * Add `sha256` function {{<gh 2762>}}
+  * Add `partialCached` template function {{<gh 1368>}}
+* Add shortcode to display Instagram images {{<gh 2690>}}
+* Add `noChmod` option to disable perm sync {{<gh 2749>}}
+* Add `quiet` build mode {{<gh 1218>}}
+
+
+## Notices
+
+* `.Site.Pages` will now contain *several kinds of pages*, including regular pages, sections, taxonomies, and the home page.
+  If you want a specific kind of page, you can filter it with `where` and `Kind`.
+  `.Site.RegularPages` is a shortcut to the page collection you have been used to getting.
+* `RSSlink` is now deprecated.  Use `RSSLink` instead.
+  Note that in Hugo 0.17 both of them existed, so there is a fifty-fifty chance you will not have to do anything
+  (if you use a theme, the chance is close to 0), and `RSSlink` will still work for two Hugo versions.
+
+## Fixes
+
+* Revise the `base` template lookup logic so it now better matches the behavior of regular templates, making it easier to override the master templates from the theme {{<gh 2783>}}
+* Add workaround for `block` template crash.
+  Block templates are very useful, but there is a bug in Go 1.6 and 1.7 which makes the template rendering crash if you use the block template in more complex scenarios.
+  This is fixed in the upcoming Go 1.8, but Hugo adds a temporary workaround in Hugo 0.18. {{<gh 2549>}}
+* All the `Params` configurations are now case insensitive {{<gh 1129>}} {{<gh 2590>}} {{<gh 2615>}}
+* Make RawContent raw again {{<gh 2601>}}
+* Fix archetype title and date handling {{<gh 2750>}}
+* Fix TOML archetype parsing in `hugo new` {{<gh 2745>}}
+* Fix page sorting when weight is zero {{<gh 2673>}}
+* Fix page names that contain dot {{<gh 2555>}}
+* Fix RSS Title regression {{<gh 2645>}}
+* Handle ToC before handling shortcodes {{<gh 2433>}}
+* Only watch relevant themes dir {{<gh 2602>}}
+* Hugo new content creates TOML slices with closing bracket on new line {{<gh 2800>}}
+
+## Improvements
+
+* Add page information to error logging in rendering {{<gh 2570>}}
+* Deprecate `RSSlink` in favor of `RSSLink`
+* Make benchmark command more useful {{<gh 2432>}}
+* Consolidate the `Param` methods {{<gh 2590>}}
+* Allow to set cache dir in config file
+* Performance improvements:
+  * Avoid repeated Viper loads of `sectionPagesMenu` {{<gh 2728>}}
+  * Avoid reading from Viper for path and URL funcs {{<gh 2495>}}
+  * Add `partialCached` template function. This can be a significant performance boost if you have complex partials that does not need to be rerendered for every page. {{<gh 1368>}}
+
+## Documentation Updates
+
+* Update roadmap {{<gh 2666>}}
+* Update multilingual example {{<gh 2417>}}
+* Add a "Deployment with rsync" tutorial page {{<gh 2658>}}
+* Refactor `/docs` to use the `block` keyword {{<gh 2226>}}
+
+
+## **0.17.0** October 7th 2016
+
+Hugo is going global with our 0.17 release.  We put a lot of thought into how we could extend Hugo
+to support multilingual websites with the most simple and elegant experience. Hugo's multilingual
+capabilities rival the best web and documentation software, but Hugo's experience is unmatched.
+If you have a single language website, the simple Hugo experience you already love is unchanged.
+Adding additional languages to your website is simple and straightforward. Hugo has been completely
+internally rewritten to be multilingual aware with translation and internationalization features
+embedded throughout Hugo.
+
+Hugo continues its trend of each release being faster than the last. It's quite a challenge to consistently add
+significant new functionality and simultaneously dramatically improve performance. {{<gh "@bep">}} has made it
+his personal mission to apply the Go mantra of "Enable more. Do less" to Hugo. Hugo's consistent improvement
+is a testament to his brilliance and his dedication to his craft. Hugo additionally benefits from the
+performance improvements from the Go team in the Go 1.7 release.
+
+This release represents **over 300 contributions by over 70 contributors** to
+the main Hugo code base. Since last release Hugo has **gained 2000 stars, 50 new
+contributors and 20 additional themes.**
+
+Hugo now has:
+
+* 12,000 stars on GitHub
+* 370+ contributors
+* 110+ themes
+
+{{<gh "@bep" >}} continues to lead the project with the lionshare of contributions
+and reviews. A special thanks to {{<gh "@bep" >}} and {{<gh "@abourget" >}} for their
+considerable work on multilingual support.
+
+A big welcome to newcomers {{<gh "@MarkDBlackwell" >}}, {{<gh "@bogem" >}} and
+{{<gh "@g3wanghc" >}} for their critical contributions.
+
+### Highlights
+
+**Multilingual Support:**
+Hugo now supports multiple languages side-by-side. A single site can now have multiple languages rendered with
+full support for translation and i18n.
+
+**Performance:**
+Hugo is faster than ever! Hugo 0.17 is not only our fastest release, it's also the most efficient.
+Hugo 0.17 is **nearly twice as fast as Hugo 0.16** and uses about 10% less memory.
+This means that the same site will build in nearly half the time it took with Hugo 0.16.
+For the first time Hugo sites are averaging well under 1ms per rendered content.
+
+**Docs overhaul:**
+This release really focused on improving the documentation. [Gohugo.io](http://gohugo.io) is
+more accurate and complete than ever.
+
+**Support for macOS Sierra**
+
+### New Features
+* Multilingual support {{<gh 2303>}}
+* Allow content expiration {{<gh 2137 >}}
+* New templates functions:
+  * `querify` function to generate query strings inside templates {{<gh 2257>}}
+  * `htmlEscape` and `htmlUnescape` template functions {{<gh 2287>}}
+  * `time` converts a timestamp string into a time.Time structure {{<gh 2329>}}
+
+### Enhancements
+
+* Render the shortcodes as late as possible {{<gh 0xed0985404db4630d1b9d3ad0b7e41fb186ae0112>}}
+* Remove unneeded casts in page.getParam {{<gh 2186 >}}
+* Automatic page date fallback {{<gh 2239>}}
+* Enable safeHTMLAttr {{<gh 2234>}}
+* Add TODO list support for markdown {{<gh 2296>}}
+* Make absURL and relURL accept any type {{<gh 2352>}}
+* Suppress 'missing static' error {{<gh 2344>}}
+* Make summary, wordcount etc. more efficient {{<gh 2378>}}
+* Better error reporting in `hugo convert` {{<gh 2440>}}
+* Reproducible builds thanks to govendor {{<gh 2461>}}
+
+### Fixes
+
+* Fix shortcode in markdown headers {{<gh 2210 >}}
+* Explicitly bind livereload to hugo server port {{<gh 2205>}}
+* Fix Emojify for certain text patterns {{<gh 2198>}}
+* Normalize file name to NFC {{<gh 2259>}}
+* Ignore emacs temp files {{<gh 2266>}}
+* Handle symlink change event {{<gh 2273>}}
+* Fix panic when using URLize {{<gh 2274>}}
+* `hugo import jekyll`: Fixed target path location check {{<gh 2293>}}
+* Return all errors from casting in templates {{<gh 2356>}}
+* Fix paginator counter on x86-32 {{<gh 2420>}}
+* Fix half-broken self-closing shortcodes {{<gh 2499>}}
+
+****
 
 ## **0.16.0** June 6th 2016
 
@@ -19,7 +212,7 @@ outdone itself with continued performance improvements,
 sites to documentation to blogs to portfolios, and increased stability.
 
 This release represents **over 550 contributions by over 110 contributors** to
-the main Hugo codebase. Since last release Hugo has **gained 3500 stars, 90
+the main Hugo code base. Since last release Hugo has **gained 3500 stars, 90
 contributors and 23 additional themes.**
 
 This release celebrates 3 years since  {{< gh "@spf13" >}} wrote the first lines
@@ -33,7 +226,7 @@ including...
 * Many subprojects like {{< gh "@spf13/cobra">}}, {{< gh "@spf13/viper">}} and
   {{< gh "@spf13/afero">}} which have experienced broad usage across the Go
   ecosystem.
-  
+
 {{< gh "@bep" >}} led the development of Hugo for the 3rd consecutive release
 with nearly half of the contributions to 0.16 in addition to his considerable
 contributions as lead maintainer. {{< gh "@anthonyfok" >}}, {{< gh
@@ -63,9 +256,9 @@ times decreased anywhere from 10% to 99%.
 * Add support for Go 1.6 `block` keyword in templates {{<gh 1832>}}
 * Partial static sync {{<gh 1644>}}
 * Source file based relative linking (a la Github) {{<gh 0x0f6b334b6715253b030c4e783b88e911b6e53e56>}}
-*  Add `ByLastmod` sort function to pages. {{<gh eb627ca16de6fb5e8646279edd295a8bf0f72bf1 >}}
+*  Add `ByLastmod` sort function to pages. {{<gh 0xeb627ca16de6fb5e8646279edd295a8bf0f72bf1 >}}
 * New templates functions:
-	* `readFile` {{<gh 1551 >}} 
+	* `readFile` {{<gh 1551 >}}
     * `countwords` and `countrunes` {{<gh 1440>}}
     * `default` {{<gh 1943>}}
     * `hasPrefix` {{<gh 1243>}}
@@ -130,7 +323,7 @@ times decreased anywhere from 10% to 99%.
 * Use absolute path when editing with editor {{<gh 1589>}}
 * Fix hugo server "Watching for changes" path display {{<gh 1721>}}
 * Do not strip special characters out of URLs {{<gh 1292>}}
-* Fix `RSSLink` when uglyurls are enabled {{<gh 175>}}
+* Fix `RSSLink` when uglyURLs are enabled {{<gh 175>}}
 * Get BaseURL from viper in server mode {{<gh 1821>}}
 * Fix shortcode handling in RST {{<gh 1904>}}
 * Use default sitemap configuration for homepage {{<gh 1304>}}
@@ -323,7 +516,7 @@ Hugo also depends on a lot of other great projects. A big thanks to all of our d
 * More Pygments highlighting options, including `line numbers`
 * Show help information to Windows users who try to double click on `hugo.exe`.
 * Add `bind` flag to `hugo server` to set the interface to which the server will bind
-* Add support for `canonifyurls` in `srcset`
+* Add support for `canonifyURLs` in `srcset`
 * Add shortcode support for HTML (content) files
 * Allow the same `shortcode` to  be used with or without inline content
 * Configurable RSS output filename
@@ -332,7 +525,7 @@ Hugo also depends on a lot of other great projects. A big thanks to all of our d
 * Fix panic with paginator and zero pages in result set.
 * Fix crossrefs on Windows.
 * Fix `eq` and `ne` template functions when used with a raw number combined with the result of `add`, `sub` etc.
-* Fix paginator with uglyurls
+* Fix paginator with uglyURLs
 * Fix {{< gh 998 >}}, supporting UTF8 characters in Permalinks.
 
 ## Notices

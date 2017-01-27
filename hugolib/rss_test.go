@@ -14,71 +14,33 @@
 package hugolib
 
 import (
-	"bytes"
+	"path/filepath"
 	"testing"
 
-	"github.com/spf13/hugo/helpers"
-	"github.com/spf13/hugo/hugofs"
-	"github.com/spf13/hugo/source"
 	"github.com/spf13/viper"
 )
 
-const rssTemplate = `<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
-  <channel>
-    <title>{{ .Title }} on {{ .Site.Title }} </title>
-    <link>{{ .Permalink }}</link>
-    <language>en-us</language>
-    <author>Steve Francia</author>
-    <rights>Francia; all rights reserved.</rights>
-    <updated>{{ .Date }}</updated>
-    {{ range .Data.Pages }}
-    <item>
-      <title>{{ .Title }}</title>
-      <link>{{ .Permalink }}</link>
-      <pubDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 MST" }}</pubDate>
-      <author>Steve Francia</author>
-      <guid>{{ .Permalink }}</guid>
-      <description>{{ .Content | html }}</description>
-    </item>
-    {{ end }}
-  </channel>
-</rss>`
-
 func TestRSSOutput(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	testCommonResetState()
 
 	rssURI := "customrss.xml"
-	viper.Set("baseurl", "http://auth/bub/")
-	viper.Set("RSSUri", rssURI)
+	viper.Set("baseURL", "http://auth/bub/")
+	viper.Set("rssURI", rssURI)
+	viper.Set("title", "RSSTest")
 
-	hugofs.InitMemFs()
-	s := &Site{
-		Source: &source.InMemorySource{ByteSource: weightedSources},
-	}
-	s.initializeSiteInfo()
-	s.prepTemplates("rss.xml", rssTemplate)
-
-	if err := s.createPages(); err != nil {
-		t.Fatalf("Unable to create pages: %s", err)
+	for _, s := range weightedSources {
+		writeSource(t, filepath.Join("content", "sect", s.Name), string(s.Content))
 	}
 
-	if err := s.buildSiteMeta(); err != nil {
-		t.Fatalf("Unable to build site metadata: %s", err)
+	if err := buildAndRenderSite(NewSiteDefaultLang()); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
 	}
 
-	if err := s.renderHomePage(); err != nil {
-		t.Fatalf("Unable to RenderHomePage: %s", err)
-	}
+	// Home RSS
+	assertFileContent(t, filepath.Join("public", rssURI), true, "<?xml", "rss version", "RSSTest")
+	// Section RSS
+	assertFileContent(t, filepath.Join("public", "sect", rssURI), true, "<?xml", "rss version", "Sects on RSSTest")
+	// Taxonomy RSS
+	assertFileContent(t, filepath.Join("public", "categories", "hugo", rssURI), true, "<?xml", "rss version", "Hugo on RSSTest")
 
-	file, err := hugofs.Destination().Open(rssURI)
-
-	if err != nil {
-		t.Fatalf("Unable to locate: %s", rssURI)
-	}
-
-	rss := helpers.ReaderToBytes(file)
-	if !bytes.HasPrefix(rss, []byte("<?xml")) {
-		t.Errorf("rss feed should start with <?xml. %s", rss)
-	}
 }

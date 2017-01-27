@@ -38,6 +38,11 @@ import (
 // FilePathSeparator as defined by os.Separator.
 const FilePathSeparator = string(filepath.Separator)
 
+// Strips carriage returns from third-party / external processes (useful for Windows)
+func normalizeExternalHelperLineFeeds(content []byte) []byte {
+	return bytes.Replace(content, []byte("\r"), []byte(""), -1)
+}
+
 // FindAvailablePort returns an available and valid TCP port.
 func FindAvailablePort() (*net.TCPAddr, error) {
 	l, err := net.Listen("tcp", ":0")
@@ -117,6 +122,30 @@ func ReaderToBytes(lines io.Reader) []byte {
 	bc := make([]byte, b.Len(), b.Len())
 	copy(bc, b.Bytes())
 	return bc
+}
+
+// ToLowerMap makes all the keys in the given map lower cased and will do so
+// recursively.
+// Notes:
+// * This will modify the map given.
+// * Any nested map[interface{}]interface{} will be converted to map[string]interface{}.
+func ToLowerMap(m map[string]interface{}) {
+	for k, v := range m {
+		switch v.(type) {
+		case map[interface{}]interface{}:
+			v = cast.ToStringMap(v)
+			ToLowerMap(v.(map[string]interface{}))
+		case map[string]interface{}:
+			ToLowerMap(v.(map[string]interface{}))
+		}
+
+		lKey := strings.ToLower(k)
+		if k != lKey {
+			delete(m, k)
+			m[lKey] = v
+		}
+
+	}
 }
 
 // ReaderToString is the same as ReaderToBytes, but returns a string.
@@ -223,17 +252,35 @@ func NewDistinctErrorLogger() *DistinctLogger {
 // NewDistinctFeedbackLogger creates a new DistinctLogger that can be used
 // to give feedback to the user while not spamming with duplicates.
 func NewDistinctFeedbackLogger() *DistinctLogger {
-	return &DistinctLogger{m: make(map[string]bool), logger: &jww.FEEDBACK}
+	return &DistinctLogger{m: make(map[string]bool), logger: jww.FEEDBACK}
 }
 
-// DistinctErrorLog cann be used to avoid spamming the logs with errors.
-var DistinctErrorLog = NewDistinctErrorLogger()
+var (
+	// DistinctErrorLog can be used to avoid spamming the logs with errors.
+	DistinctErrorLog = NewDistinctErrorLogger()
 
-// Deprecated logs ERROR logs about a deprecation, but only once for a given set of arguments' values.
-func Deprecated(object, item, alternative string) {
-	//	deprecatedLogger.Printf("%s's %s is deprecated and will be removed in Hugo %s. Use %s instead.", object, item, NextHugoReleaseVersion(), alternative)
-	DistinctErrorLog.Printf("%s's %s is deprecated and will be removed VERY SOON. Use %s instead.", object, item, alternative)
+	// DistinctFeedbackLog can be used to avoid spamming the logs with info messages.
+	DistinctFeedbackLog = NewDistinctFeedbackLogger()
+)
 
+// InitLoggers sets up the global distinct loggers.
+func InitLoggers() {
+	DistinctErrorLog = NewDistinctErrorLogger()
+}
+
+// Deprecated informs about a deprecation, but only once for a given set of arguments' values.
+// If the err flag is enabled, it logs as an ERROR (will exit with -1) and the text will
+// point at the next Hugo release.
+// The idea is two remove an item in two Hugo releases to give users and theme authors
+// plenty of time to fix their templates.
+func Deprecated(object, item, alternative string, err bool) {
+	if err {
+		DistinctErrorLog.Printf("%s's %s is deprecated and will be removed in Hugo %s. Use %s instead.", object, item, NextHugoReleaseVersion(), alternative)
+
+	} else {
+		// Make sure the users see this while avoiding build breakage. This will not lead to an os.Exit(-1)
+		DistinctFeedbackLog.Printf("WARNING: %s's %s is deprecated and will be removed in a future release. Use %s instead.", object, item, alternative)
+	}
 }
 
 // SliceToLower goes through the source slice and lowers all values.
@@ -316,13 +363,13 @@ func Seq(args ...interface{}) ([]int, error) {
 
 	// sanity check
 	if last < -100000 {
-		return nil, errors.New("size of result exeeds limit")
+		return nil, errors.New("size of result exceeds limit")
 	}
 	size := ((last - first) / inc) + 1
 
 	// sanity check
 	if size <= 0 || size > 2000 {
-		return nil, errors.New("size of result exeeds limit")
+		return nil, errors.New("size of result exceeds limit")
 	}
 
 	seq := make([]int, size)

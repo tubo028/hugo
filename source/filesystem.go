@@ -105,6 +105,9 @@ func (f *Filesystem) captureFiles() {
 
 	if err != nil {
 		jww.ERROR.Println(err)
+		if err == helpers.ErrWalkRootTooShort {
+			panic("The root path is too short. If this is a test, make sure to init the content paths.")
+		}
 	}
 
 }
@@ -116,7 +119,7 @@ func (f *Filesystem) shouldRead(filePath string, fi os.FileInfo) (bool, error) {
 			jww.ERROR.Printf("Cannot read symbolic link '%s', error was: %s", filePath, err)
 			return false, nil
 		}
-		linkfi, err := os.Stat(link)
+		linkfi, err := hugofs.Source().Stat(link)
 		if err != nil {
 			jww.ERROR.Printf("Cannot stat '%s', error was: %s", link, err)
 			return false, nil
@@ -156,7 +159,7 @@ func isNonProcessablePath(filePath string) bool {
 		strings.HasSuffix(base, "~") {
 		return true
 	}
-	ignoreFiles := viper.GetStringSlice("IgnoreFiles")
+	ignoreFiles := viper.GetStringSlice("ignoreFiles")
 	if len(ignoreFiles) > 0 {
 		for _, ignorePattern := range ignoreFiles {
 			match, err := regexp.MatchString(ignorePattern, filePath)

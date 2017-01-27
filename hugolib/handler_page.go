@@ -14,10 +14,11 @@
 package hugolib
 
 import (
+	"bytes"
+	"fmt"
+
 	"github.com/spf13/hugo/helpers"
 	"github.com/spf13/hugo/source"
-	"github.com/spf13/hugo/tpl"
-	jww "github.com/spf13/jwalterweatherman"
 	"github.com/spf13/viper"
 )
 
@@ -32,7 +33,7 @@ func init() {
 type basicPageHandler Handle
 
 func (b basicPageHandler) Read(f *source.File, s *Site) HandledResult {
-	page, err := NewPage(f.Path())
+	page, err := s.NewPage(f.Path())
 
 	if err != nil {
 		return HandledResult{file: f, err: err}
@@ -41,8 +42,6 @@ func (b basicPageHandler) Read(f *source.File, s *Site) HandledResult {
 	if _, err := page.ReadFrom(f.Contents); err != nil {
 		return HandledResult{file: f, err: err}
 	}
-
-	page.Site = &s.Info
 
 	return HandledResult{file: f, page: page, err: err}
 }
@@ -56,8 +55,8 @@ type markdownHandler struct {
 }
 
 func (h markdownHandler) Extensions() []string { return []string{"mdown", "markdown", "md"} }
-func (h markdownHandler) PageConvert(p *Page, t tpl.Template) HandledResult {
-	return commonConvert(p, t)
+func (h markdownHandler) PageConvert(p *Page) HandledResult {
+	return commonConvert(p)
 }
 
 type htmlHandler struct {
@@ -65,20 +64,18 @@ type htmlHandler struct {
 }
 
 func (h htmlHandler) Extensions() []string { return []string{"html", "htm"} }
-func (h htmlHandler) PageConvert(p *Page, t tpl.Template) HandledResult {
-	p.ProcessShortcodes(t)
-	var err error
 
-	if len(p.contentShortCodes) > 0 {
-		p.rawContent, err = replaceShortcodeTokens(p.rawContent, shortcodePlaceholderPrefix, p.contentShortCodes)
-
-		if err != nil {
-			jww.FATAL.Printf("Failed to replace short code tokens in %s:\n%s", p.BaseFileName(), err.Error())
-			return HandledResult{err: err}
-		}
+// TODO(bep) globals use p.s.t
+func (h htmlHandler) PageConvert(p *Page) HandledResult {
+	if p.rendered {
+		panic(fmt.Sprintf("Page %q already rendered, does not need conversion", p.BaseFileName()))
 	}
 
-	p.Content = helpers.BytesToHTML(p.rawContent)
+	// Work on a copy of the raw content from now on.
+	p.createWorkContentCopy()
+
+	p.ProcessShortcodes()
+
 	return HandledResult{err: nil}
 }
 
@@ -87,8 +84,8 @@ type asciidocHandler struct {
 }
 
 func (h asciidocHandler) Extensions() []string { return []string{"asciidoc", "adoc", "ad"} }
-func (h asciidocHandler) PageConvert(p *Page, t tpl.Template) HandledResult {
-	return commonConvert(p, t)
+func (h asciidocHandler) PageConvert(p *Page) HandledResult {
+	return commonConvert(p)
 }
 
 type rstHandler struct {
@@ -96,8 +93,8 @@ type rstHandler struct {
 }
 
 func (h rstHandler) Extensions() []string { return []string{"rest", "rst"} }
-func (h rstHandler) PageConvert(p *Page, t tpl.Template) HandledResult {
-	return commonConvert(p, t)
+func (h rstHandler) PageConvert(p *Page) HandledResult {
+	return commonConvert(p)
 }
 
 type mmarkHandler struct {
@@ -105,34 +102,31 @@ type mmarkHandler struct {
 }
 
 func (h mmarkHandler) Extensions() []string { return []string{"mmark"} }
-func (h mmarkHandler) PageConvert(p *Page, t tpl.Template) HandledResult {
-	return commonConvert(p, t)
+func (h mmarkHandler) PageConvert(p *Page) HandledResult {
+	return commonConvert(p)
 }
 
-func commonConvert(p *Page, t tpl.Template) HandledResult {
-	p.ProcessShortcodes(t)
-
-	var err error
-
-	if viper.GetBool("EnableEmoji") {
-		p.rawContent = helpers.Emojify(p.rawContent)
+func commonConvert(p *Page) HandledResult {
+	if p.rendered {
+		panic(fmt.Sprintf("Page %q already rendered, does not need conversion", p.BaseFileName()))
 	}
 
-	renderedContent := p.renderContent(helpers.RemoveSummaryDivider(p.rawContent))
+	// Work on a copy of the raw content from now on.
+	p.createWorkContentCopy()
 
-	if len(p.contentShortCodes) > 0 {
-		renderedContent, err = replaceShortcodeTokens(renderedContent, shortcodePlaceholderPrefix, p.contentShortCodes)
+	p.ProcessShortcodes()
 
-		if err != nil {
-			jww.FATAL.Printf("Failed to replace shortcode tokens in %s:\n%s", p.BaseFileName(), err.Error())
-			return HandledResult{err: err}
-		}
+	// TODO(bep) these page handlers need to be re-evaluated, as it is hard to
+	// process a page in isolation. See the new preRender func.
+	if viper.GetBool("enableEmoji") {
+		p.workContent = helpers.Emojify(p.workContent)
 	}
 
-	tmpContent, tmpTableOfContents := helpers.ExtractTOC(renderedContent)
+	// We have to replace the <!--more--> with something that survives all the
+	// rendering engines.
+	// TODO(bep) inline replace
+	p.workContent = bytes.Replace(p.workContent, []byte(helpers.SummaryDivider), internalSummaryDivider, 1)
+	p.workContent = p.renderContent(p.workContent)
 
-	p.Content = helpers.BytesToHTML(tmpContent)
-	p.TableOfContents = helpers.BytesToHTML(tmpTableOfContents)
-	p.rendered = true
 	return HandledResult{err: nil}
 }

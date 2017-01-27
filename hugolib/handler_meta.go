@@ -74,9 +74,7 @@ func (mh *MetaHandle) Convert(i interface{}, s *Site, results HandleResults) {
 			return
 		}
 
-		results <- h.PageConvert(p, s.Tmpl)
-		p.setSummary()
-		p.analyzePage()
+		results <- h.PageConvert(p)
 	}
 }
 

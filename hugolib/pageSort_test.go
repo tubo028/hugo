@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/hugo/helpers"
 	"github.com/spf13/hugo/source"
 	"github.com/stretchr/testify/assert"
 )
@@ -29,22 +30,29 @@ func TestDefaultSort(t *testing.T) {
 	d1 := time.Now()
 	d2 := d1.Add(-1 * time.Hour)
 	d3 := d1.Add(-2 * time.Hour)
+	d4 := d1.Add(-3 * time.Hour)
 
-	p := createSortTestPages(3)
+	p := createSortTestPages(4)
 
 	// first by weight
-	setSortVals([3]time.Time{d1, d2, d3}, [3]string{"b", "a", "c"}, [3]int{3, 2, 1}, p)
+	setSortVals([4]time.Time{d1, d2, d3, d4}, [4]string{"b", "a", "c", "d"}, [4]int{4, 3, 2, 1}, p)
+	p.Sort()
+
+	assert.Equal(t, 1, p[0].Weight)
+
+	// Consider zero weight, issue #2673
+	setSortVals([4]time.Time{d1, d2, d3, d4}, [4]string{"b", "a", "d", "c"}, [4]int{0, 0, 0, 1}, p)
 	p.Sort()
 
 	assert.Equal(t, 1, p[0].Weight)
 
 	// next by date
-	setSortVals([3]time.Time{d3, d1, d2}, [3]string{"a", "b", "c"}, [3]int{1, 1, 1}, p)
+	setSortVals([4]time.Time{d3, d4, d1, d2}, [4]string{"a", "b", "c", "d"}, [4]int{1, 1, 1, 1}, p)
 	p.Sort()
 	assert.Equal(t, d1, p[0].Date)
 
 	// finally by link title
-	setSortVals([3]time.Time{d3, d3, d3}, [3]string{"b", "c", "a"}, [3]int{1, 1, 1}, p)
+	setSortVals([4]time.Time{d3, d3, d3, d3}, [4]string{"b", "c", "a", "d"}, [4]int{1, 1, 1, 1}, p)
 	p.Sort()
 	assert.Equal(t, "al", p[0].LinkTitle())
 	assert.Equal(t, "bl", p[1].LinkTitle())
@@ -56,8 +64,9 @@ func TestSortByN(t *testing.T) {
 	d1 := time.Now()
 	d2 := d1.Add(-2 * time.Hour)
 	d3 := d1.Add(-10 * time.Hour)
+	d4 := d1.Add(-20 * time.Hour)
 
-	p := createSortTestPages(3)
+	p := createSortTestPages(4)
 
 	for i, this := range []struct {
 		sortFunc   func(p Pages) Pages
@@ -66,13 +75,13 @@ func TestSortByN(t *testing.T) {
 		{(Pages).ByWeight, func(p Pages) bool { return p[0].Weight == 1 }},
 		{(Pages).ByTitle, func(p Pages) bool { return p[0].Title == "ab" }},
 		{(Pages).ByLinkTitle, func(p Pages) bool { return p[0].LinkTitle() == "abl" }},
-		{(Pages).ByDate, func(p Pages) bool { return p[0].Date == d3 }},
-		{(Pages).ByPublishDate, func(p Pages) bool { return p[0].PublishDate == d3 }},
-		{(Pages).ByExpiryDate, func(p Pages) bool { return p[0].ExpiryDate == d3 }},
-		{(Pages).ByLastmod, func(p Pages) bool { return p[1].Lastmod == d2 }},
+		{(Pages).ByDate, func(p Pages) bool { return p[0].Date == d4 }},
+		{(Pages).ByPublishDate, func(p Pages) bool { return p[0].PublishDate == d4 }},
+		{(Pages).ByExpiryDate, func(p Pages) bool { return p[0].ExpiryDate == d4 }},
+		{(Pages).ByLastmod, func(p Pages) bool { return p[1].Lastmod == d3 }},
 		{(Pages).ByLength, func(p Pages) bool { return p[0].Content == "b_content" }},
 	} {
-		setSortVals([3]time.Time{d1, d2, d3}, [3]string{"b", "ab", "cde"}, [3]int{3, 2, 1}, p)
+		setSortVals([4]time.Time{d1, d2, d3, d4}, [4]string{"b", "ab", "cde", "fg"}, [4]int{0, 3, 2, 1}, p)
 
 		sorted := this.sortFunc(p)
 		if !this.assertFunc(sorted) {
@@ -95,11 +104,11 @@ func TestLimit(t *testing.T) {
 
 func TestPageSortReverse(t *testing.T) {
 	p1 := createSortTestPages(10)
-	assert.Equal(t, 0, p1[0].FuzzyWordCount)
-	assert.Equal(t, 9, p1[9].FuzzyWordCount)
+	assert.Equal(t, 0, p1[0].fuzzyWordCount)
+	assert.Equal(t, 9, p1[9].fuzzyWordCount)
 	p2 := p1.Reverse()
-	assert.Equal(t, 9, p2[0].FuzzyWordCount)
-	assert.Equal(t, 0, p2[9].FuzzyWordCount)
+	assert.Equal(t, 9, p2[0].fuzzyWordCount)
+	assert.Equal(t, 0, p2[9].fuzzyWordCount)
 	// cached
 	assert.True(t, probablyEqualPages(p2, p1.Reverse()))
 }
@@ -114,7 +123,7 @@ func BenchmarkSortByWeightAndReverse(b *testing.B) {
 	}
 }
 
-func setSortVals(dates [3]time.Time, titles [3]string, weights [3]int, pages Pages) {
+func setSortVals(dates [4]time.Time, titles [4]string, weights [4]int, pages Pages) {
 	for i := range dates {
 		pages[i].Date = dates[i]
 		pages[i].Lastmod = dates[i]
@@ -134,24 +143,24 @@ func setSortVals(dates [3]time.Time, titles [3]string, weights [3]int, pages Pag
 func createSortTestPages(num int) Pages {
 	pages := make(Pages, num)
 
+	info := newSiteInfo(siteBuilderCfg{baseURL: "http://base", language: helpers.NewDefaultLanguage()})
+
 	for i := 0; i < num; i++ {
 		pages[i] = &Page{
-			Node: Node{
-				URLPath: URLPath{
-					Section: "z",
-					URL:     fmt.Sprintf("http://base/x/y/p%d.html", i),
-				},
-				Site: &SiteInfo{
-					BaseURL: "http://base/",
-				},
+			pageInit: &pageInit{},
+			URLPath: URLPath{
+				Section: "z",
+				URL:     fmt.Sprintf("http://base/x/y/p%d.html", i),
 			},
+			Site:   &info,
 			Source: Source{File: *source.NewFile(filepath.FromSlash(fmt.Sprintf("/x/y/p%d.md", i)))},
 		}
 		w := 5
+
 		if i%2 == 0 {
 			w = 10
 		}
-		pages[i].FuzzyWordCount = i
+		pages[i].fuzzyWordCount = i
 		pages[i].Weight = w
 		pages[i].Description = "initial"
 	}

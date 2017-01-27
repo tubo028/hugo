@@ -14,9 +14,9 @@
 package commands
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/hugo/helpers"
 	"github.com/spf13/hugo/hugolib"
+	jww "github.com/spf13/jwalterweatherman"
 )
 
 var versionCmd = &cobra.Command{
@@ -31,19 +32,22 @@ var versionCmd = &cobra.Command{
 	Short: "Print the version number of Hugo",
 	Long:  `All software has versions. This is Hugo's.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if hugolib.BuildDate == "" {
-			setBuildDate() // set the build date from executable's mdate
-		} else {
-			formatBuildDate() // format the compile time
-		}
-		if hugolib.CommitHash == "" {
-			fmt.Printf("Hugo Static Site Generator v%s BuildDate: %s\n", helpers.HugoVersion(), hugolib.BuildDate)
-		} else {
-			fmt.Printf("Hugo Static Site Generator v%s-%s BuildDate: %s\n", helpers.HugoVersion(), strings.ToUpper(hugolib.CommitHash), hugolib.BuildDate)
-		}
-
+		printHugoVersion()
 		return nil
 	},
+}
+
+func printHugoVersion() {
+	if hugolib.BuildDate == "" {
+		setBuildDate() // set the build date from executable's mdate
+	} else {
+		formatBuildDate() // format the compile time
+	}
+	if hugolib.CommitHash == "" {
+		jww.FEEDBACK.Printf("Hugo Static Site Generator v%s %s/%s BuildDate: %s\n", helpers.HugoVersion(), runtime.GOOS, runtime.GOARCH, hugolib.BuildDate)
+	} else {
+		jww.FEEDBACK.Printf("Hugo Static Site Generator v%s-%s %s/%s BuildDate: %s\n", helpers.HugoVersion(), strings.ToUpper(hugolib.CommitHash), runtime.GOOS, runtime.GOARCH, hugolib.BuildDate)
+	}
 }
 
 // setBuildDate checks the ModTime of the Hugo executable and returns it as a
@@ -56,12 +60,12 @@ func setBuildDate() {
 	fname, _ := osext.Executable()
 	dir, err := filepath.Abs(filepath.Dir(fname))
 	if err != nil {
-		fmt.Println(err)
+		jww.ERROR.Println(err)
 		return
 	}
 	fi, err := os.Lstat(filepath.Join(dir, filepath.Base(fname)))
 	if err != nil {
-		fmt.Println(err)
+		jww.ERROR.Println(err)
 		return
 	}
 	t := fi.ModTime()

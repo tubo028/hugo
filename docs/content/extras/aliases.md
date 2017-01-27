@@ -9,9 +9,8 @@ menu:
   main:
     parent: extras
 next: /extras/analytics
-prev: /taxonomies/ordering
+prev: /taxonomies/methods
 title: Aliases
-weight: 10
 ---
 
 For people migrating existing published content to Hugo, there's a good chance you need a mechanism to handle redirecting old URLs.
@@ -62,11 +61,24 @@ and the complete filename or directory.*
 2. *Aliases are rendered prior to any content and will be overwritten by
 any content with the same location.*
 
+## Multilingual example
+
+On [multilingual sites]({{< relref "content/multilingual.md" >}}), each translation of a post can have unique aliases. To use the same alias across multiple languages, prefix it with the language code.
+
+In `/posts/my-new-post.es.md`:
+
+```yaml
+---
+aliases:
+    - /es/posts/my-original-post/
+---
+```
+
 ## How Hugo Aliases Work
 
 When aliases are specified, Hugo creates a physical folder structure to match the alias entry, and, an html file specifying the canonical URL for the page, and a redirect target.
 
-Assuming a baseurl of `mysite.tld`, the contents of the html file will look something like:
+Assuming a baseURL of `mysite.tld`, the contents of the html file will look something like:
 
 ```html
 <!DOCTYPE html>
@@ -81,3 +93,11 @@ Assuming a baseurl of `mysite.tld`, the contents of the html file will look some
 ```
 
 The `http-equiv="refresh"` line is what performs the redirect, in 0 seconds in this case.
+
+## Customizing
+
+You may customize this alias page by creating an alias.html template in the
+layouts folder of your site.  In this case, the data passed to the template is
+
+* Permalink - the link to the page being aliased
+* Page - the Page data for the page being aliased

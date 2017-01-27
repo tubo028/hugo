@@ -34,8 +34,8 @@ type HugoHTMLRenderer struct {
 }
 
 func (renderer *HugoHTMLRenderer) BlockCode(out *bytes.Buffer, text []byte, lang string) {
-	if viper.GetBool("PygmentsCodeFences") && (lang != "" || viper.GetBool("PygmentsCodeFencesGuessSyntax")) {
-		opts := viper.GetString("PygmentsOptions")
+	if viper.GetBool("pygmentsCodeFences") && (lang != "" || viper.GetBool("pygmentsCodeFencesGuessSyntax")) {
+		opts := viper.GetString("pygmentsOptions")
 		str := html.UnescapeString(string(text))
 		out.WriteString(Highlight(str, lang, opts))
 	} else {
@@ -44,7 +44,7 @@ func (renderer *HugoHTMLRenderer) BlockCode(out *bytes.Buffer, text []byte, lang
 }
 
 func (renderer *HugoHTMLRenderer) Link(out *bytes.Buffer, link []byte, title []byte, content []byte) {
-	if renderer.LinkResolver == nil || bytes.HasPrefix(link, []byte("{-{-HUGOSHORTCODE")) {
+	if renderer.LinkResolver == nil || bytes.HasPrefix(link, []byte("HAHAHUGOSHORTCODE")) {
 		// Use the blackfriday built in Link handler
 		renderer.Renderer.Link(out, link, title, content)
 	} else {
@@ -58,7 +58,7 @@ func (renderer *HugoHTMLRenderer) Link(out *bytes.Buffer, link []byte, title []b
 	}
 }
 func (renderer *HugoHTMLRenderer) Image(out *bytes.Buffer, link []byte, title []byte, alt []byte) {
-	if renderer.FileResolver == nil || bytes.HasPrefix(link, []byte("{-{-HUGOSHORTCODE")) {
+	if renderer.FileResolver == nil || bytes.HasPrefix(link, []byte("HAHAHUGOSHORTCODE")) {
 		// Use the blackfriday built in Image handler
 		renderer.Renderer.Image(out, link, title, alt)
 	} else {
@@ -72,6 +72,44 @@ func (renderer *HugoHTMLRenderer) Image(out *bytes.Buffer, link []byte, title []
 	}
 }
 
+// ListItem adds task list support to the Blackfriday renderer.
+func (renderer *HugoHTMLRenderer) ListItem(out *bytes.Buffer, text []byte, flags int) {
+	if !renderer.Config.TaskLists {
+		renderer.Renderer.ListItem(out, text, flags)
+		return
+	}
+
+	switch {
+	case bytes.HasPrefix(text, []byte("[ ] ")):
+		text = append([]byte(`<input type="checkbox" disabled class="task-list-item">`), text[3:]...)
+
+	case bytes.HasPrefix(text, []byte("[x] ")) || bytes.HasPrefix(text, []byte("[X] ")):
+		text = append([]byte(`<input type="checkbox" checked disabled class="task-list-item">`), text[3:]...)
+	}
+
+	renderer.Renderer.ListItem(out, text, flags)
+}
+
+// List adds task list support to the Blackfriday renderer.
+func (renderer *HugoHTMLRenderer) List(out *bytes.Buffer, text func() bool, flags int) {
+	if !renderer.Config.TaskLists {
+		renderer.Renderer.List(out, text, flags)
+		return
+	}
+	marker := out.Len()
+	renderer.Renderer.List(out, text, flags)
+	if out.Len() > marker {
+		list := out.Bytes()[marker:]
+		if bytes.Contains(list, []byte("task-list-item")) {
+			// Rewrite the buffer from the marker
+			out.Truncate(marker)
+			// May be either dl, ul or ol
+			list := append(list[:4], append([]byte(` class="task-list"`), list[4:]...)...)
+			out.Write(list)
+		}
+	}
+}
+
 // HugoMmarkHTMLRenderer wraps a mmark.Renderer, typically a mmark.html
 // Enabling Hugo to customise the rendering experience
 type HugoMmarkHTMLRenderer struct {
@@ -79,7 +117,7 @@ type HugoMmarkHTMLRenderer struct {
 }
 
 func (renderer *HugoMmarkHTMLRenderer) BlockCode(out *bytes.Buffer, text []byte, lang string, caption []byte, subfigure bool, callouts bool) {
-	if viper.GetBool("PygmentsCodeFences") && (lang != "" || viper.GetBool("PygmentsCodeFencesGuessSyntax")) {
+	if viper.GetBool("pygmentsCodeFences") && (lang != "" || viper.GetBool("pygmentsCodeFencesGuessSyntax")) {
 		str := html.UnescapeString(string(text))
 		out.WriteString(Highlight(str, lang, ""))
 	} else {

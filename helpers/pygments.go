@@ -17,15 +17,16 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
-	"github.com/spf13/hugo/hugofs"
-	jww "github.com/spf13/jwalterweatherman"
-	"github.com/spf13/viper"
 	"io"
 	"io/ioutil"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/spf13/hugo/hugofs"
+	jww "github.com/spf13/jwalterweatherman"
+	"github.com/spf13/viper"
 )
 
 const pygmentsBin = "pygmentize"
@@ -41,7 +42,6 @@ func HasPygments() bool {
 
 // Highlight takes some code and returns highlighted code.
 func Highlight(code, lang, optsStr string) string {
-
 	if !HasPygments() {
 		jww.WARN.Println("Highlighting requires Pygments to be installed and in the path")
 		return code
@@ -62,8 +62,8 @@ func Highlight(code, lang, optsStr string) string {
 
 	fs := hugofs.Os()
 
-	ignoreCache := viper.GetBool("IgnoreCache")
-	cacheDir := viper.GetString("CacheDir")
+	ignoreCache := viper.GetBool("ignoreCache")
+	cacheDir := viper.GetString("cacheDir")
 	var cachefile string
 
 	if !ignoreCache && cacheDir != "" {
@@ -112,7 +112,7 @@ func Highlight(code, lang, optsStr string) string {
 		return code
 	}
 
-	str := out.String()
+	str := string(normalizeExternalHelperLineFeeds([]byte(out.String())))
 
 	// inject code tag into Pygments output
 	if lang != "" && strings.Contains(str, "<pre>") {
@@ -155,6 +155,7 @@ func init() {
 	pygmentsKeywords["lineanchors"] = true
 	pygmentsKeywords["linespans"] = true
 	pygmentsKeywords["anchorlinenos"] = true
+	pygmentsKeywords["startinline"] = true
 }
 
 func parseOptions(options map[string]string, in string) error {
@@ -195,19 +196,18 @@ func createOptionsString(options map[string]string) string {
 }
 
 func parseDefaultPygmentsOpts() (map[string]string, error) {
-
 	options := make(map[string]string)
-	err := parseOptions(options, viper.GetString("PygmentsOptions"))
+	err := parseOptions(options, viper.GetString("pygmentsOptions"))
 	if err != nil {
 		return nil, err
 	}
 
-	if viper.IsSet("PygmentsStyle") {
-		options["style"] = viper.GetString("PygmentsStyle")
+	if viper.IsSet("pygmentsStyle") {
+		options["style"] = viper.GetString("pygmentsStyle")
 	}
 
-	if viper.IsSet("PygmentsUseClasses") {
-		if viper.GetBool("PygmentsUseClasses") {
+	if viper.IsSet("pygmentsUseClasses") {
+		if viper.GetBool("pygmentsUseClasses") {
 			options["noclasses"] = "false"
 		} else {
 			options["noclasses"] = "true"
@@ -223,7 +223,6 @@ func parseDefaultPygmentsOpts() (map[string]string, error) {
 }
 
 func parsePygmentsOpts(in string) (string, error) {
-
 	options, err := parseDefaultPygmentsOpts()
 	if err != nil {
 		return "", err

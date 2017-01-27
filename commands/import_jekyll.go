@@ -16,7 +16,6 @@ package commands
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -62,8 +61,6 @@ func init() {
 }
 
 func importFromJekyll(cmd *cobra.Command, args []string) error {
-	jww.SetLogThreshold(jww.LevelTrace)
-	jww.SetStdoutThreshold(jww.LevelWarn)
 
 	if len(args) < 2 {
 		return newUserError(`Import from Jekyll requires two paths, e.g. ` + "`hugo import jekyll jekyll_root_path target_path`.")
@@ -81,16 +78,17 @@ func importFromJekyll(cmd *cobra.Command, args []string) error {
 
 	jww.INFO.Println("Import Jekyll from:", jekyllRoot, "to:", targetDir)
 
-	if strings.HasPrefix(targetDir, jekyllRoot) {
+	if strings.HasPrefix(filepath.Dir(targetDir), jekyllRoot) {
 		return newUserError("Target path should not be inside the Jekyll root, aborting.")
 	}
 
 	forceImport, _ := cmd.Flags().GetBool("force")
-	if err := createSiteFromJekyll(jekyllRoot, targetDir, forceImport); err != nil {
-		return newUserError(err)
+	site, err := createSiteFromJekyll(jekyllRoot, targetDir, forceImport)
+	if err != nil {
+		return err
 	}
 
-	fmt.Println("Importing...")
+	jww.FEEDBACK.Println("Importing...")
 
 	fileCount := 0
 	callback := func(path string, fi os.FileInfo, err error) error {
@@ -121,7 +119,7 @@ func importFromJekyll(cmd *cobra.Command, args []string) error {
 		}
 
 		fileCount++
-		return convertJekyllPost(path, relPath, targetDir, draft)
+		return convertJekyllPost(site, path, relPath, targetDir, draft)
 	}
 
 	err = helpers.SymbolicWalk(hugofs.Os(), jekyllRoot, callback)
@@ -129,26 +127,26 @@ func importFromJekyll(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Congratulations!", fileCount, "post(s) imported!")
-	fmt.Println("Now, start Hugo by yourself:\n" +
+	jww.FEEDBACK.Println("Congratulations!", fileCount, "post(s) imported!")
+	jww.FEEDBACK.Println("Now, start Hugo by yourself:\n" +
 		"$ git clone https://github.com/spf13/herring-cove.git " + args[1] + "/themes/herring-cove")
-	fmt.Println("$ cd " + args[1] + "\n$ hugo server --theme=herring-cove")
+	jww.FEEDBACK.Println("$ cd " + args[1] + "\n$ hugo server --theme=herring-cove")
 
 	return nil
 }
 
 // TODO: Consider calling doNewSite() instead?
-func createSiteFromJekyll(jekyllRoot, targetDir string, force bool) error {
+func createSiteFromJekyll(jekyllRoot, targetDir string, force bool) (*hugolib.Site, error) {
 	fs := hugofs.Source()
 	if exists, _ := helpers.Exists(targetDir, fs); exists {
 		if isDir, _ := helpers.IsDir(targetDir, fs); !isDir {
-			return errors.New("Target path \"" + targetDir + "\" already exists but not a directory")
+			return nil, errors.New("Target path \"" + targetDir + "\" already exists but not a directory")
 		}
 
 		isEmpty, _ := helpers.IsEmpty(targetDir, fs)
 
 		if !isEmpty && !force {
-			return errors.New("Target path \"" + targetDir + "\" already exists and is not empty")
+			return nil, errors.New("Target path \"" + targetDir + "\" already exists and is not empty")
 		}
 	}
 
@@ -169,7 +167,7 @@ func createSiteFromJekyll(jekyllRoot, targetDir string, force bool) error {
 		}
 	}
 	if !hasPostsOrDrafts {
-		return errors.New("Your Jekyll root contains neither posts nor drafts, aborting.")
+		return nil, errors.New("Your Jekyll root contains neither posts nor drafts, aborting.")
 	}
 
 	mkdir(targetDir, "layouts")
@@ -182,8 +180,9 @@ func createSiteFromJekyll(jekyllRoot, targetDir string, force bool) error {
 	createConfigFromJekyll(targetDir, "yaml", jekyllConfig)
 
 	copyJekyllFilesAndFolders(jekyllRoot, filepath.Join(targetDir, "static"))
+	site := hugolib.NewSiteDefaultLang()
 
-	return nil
+	return site, nil
 }
 
 func loadJekyllConfig(jekyllRoot string) map[string]interface{} {
@@ -221,7 +220,7 @@ func loadJekyllConfig(jekyllRoot string) map[string]interface{} {
 
 func createConfigFromJekyll(inpath string, kind string, jekyllConfig map[string]interface{}) (err error) {
 	title := "My New Hugo Site"
-	baseurl := "http://replace-this-with-your-hugo-site.com/"
+	baseURL := "http://example.org/"
 
 	for key, value := range jekyllConfig {
 		lowerKey := strings.ToLower(key)
@@ -234,13 +233,13 @@ func createConfigFromJekyll(inpath string, kind string, jekyllConfig map[string]
 
 		case "url":
 			if str, ok := value.(string); ok {
-				baseurl = str
+				baseURL = str
 			}
 		}
 	}
 
 	in := map[string]interface{}{
-		"baseurl":            baseurl,
+		"baseURL":            baseURL,
 		"title":              title,
 		"languageCode":       "en-us",
 		"disablePathToLower": true,
@@ -382,7 +381,7 @@ func parseJekyllFilename(filename string) (time.Time, string, error) {
 	return postDate, postName, nil
 }
 
-func convertJekyllPost(path, relPath, targetDir string, draft bool) error {
+func convertJekyllPost(s *hugolib.Site, path, relPath, targetDir string, draft bool) error {
 	jww.TRACE.Println("Converting", path)
 
 	filename := filepath.Base(path)
@@ -425,7 +424,7 @@ func convertJekyllPost(path, relPath, targetDir string, draft bool) error {
 	jww.TRACE.Println(newmetadata)
 	content := convertJekyllContent(newmetadata, string(psr.Content()))
 
-	page, err := hugolib.NewPage(filename)
+	page, err := s.NewPage(filename)
 	if err != nil {
 		jww.ERROR.Println("New page error", filename)
 		return err

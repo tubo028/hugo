@@ -20,6 +20,8 @@ A unique template is needed to create a list of the terms for a given
 taxonomy. This is different from the [list template](/templates/list/)
 as that template is a list of content, whereas this is a list of meta data.
 
+Note that a taxonomy terms page can also have a content file with frontmatter,  see [Source Organization]({{< relref "overview/source-directory.md#content-for-home-page-and-other-list-pages" >}}).
+
 ## Which Template will be rendered?
 Hugo uses a set of rules to figure out which template to use when
 rendering a specific page.
@@ -46,8 +48,8 @@ dedicated page for the terms.
 
 ## Variables
 
-Taxonomy Terms pages are of the type "node" and have all the
-[node variables](/templates/variables/) and
+Taxonomy Terms pages are of the type `Page` and have all the
+[page variables](/templates/variables/) and
 [site variables](/templates/variables/)
 available to use in the templates.
 
@@ -62,11 +64,6 @@ Taxonomy Terms pages will additionally have:
 The last two can also be reversed: **.Data.Terms.Alphabetical.Reverse**, **.Data.Terms.ByCount.Reverse**.
 
 ### Example terms.html files
-
-List pages are of the type "node" and have all the
-[node variables](/templates/variables/) and
-[site variables](/templates/variables/)
-available to use in the templates.
 
 This content template is used for [spf13.com](http://spf13.com/).
 It makes use of [partial templates](/templates/partials/). The list of taxonomy
@@ -89,7 +86,7 @@ content tagged with each tag.
         <ul>
         {{ $data := .Data }}
         {{ range $key, $value := .Data.Terms }}
-          <li><a href="{{ $data.Plural }}/{{ $key | urlize }}">{{ $key }}</a> {{ len $value }}</li>
+          <li><a href="{{ .Site.LanguagePrefix }}/{{ $data.Plural }}/{{ $key | urlize }}">{{ $key }}</a> {{ len $value }}</li>
         {{ end }}
        </ul>
       </div>
@@ -109,7 +106,7 @@ Another example listing the content for each term (ordered by Date):
 
         {{ $data := .Data }}
         {{ range $key,$value := .Data.Terms.ByCount }}
-        <h2><a href="{{ $data.Plural }}/{{ $value.Name | urlize }}">{{ $value.Name }}</a> {{ $value.Count }}</h2>
+        <h2><a href="{{ .Site.LanguagePrefix }}/{{ $data.Plural }}/{{ $value.Name | urlize }}">{{ $value.Name }}</a> {{ $value.Count }}</h2>
         <ul>
         {{ range $value.Pages.ByDate }}
           <li><a href="{{ .Permalink }}">{{ .Title }}</a></li>
@@ -140,7 +137,7 @@ Hugo can order the meta data in two different ways. It can be ordered:
         <ul>
         {{ $data := .Data }}
         {{ range $key, $value := .Data.Terms.Alphabetical }}
-          <li><a href="{{ $data.Plural }}/{{ $value.Name | urlize }}">{{ $value.Name }}</a> {{ $value.Count }}</li>
+          <li><a href="{{ .Site.LanguagePrefix }}/{{ $data.Plural }}/{{ $value.Name | urlize }}">{{ $value.Name }}</a> {{ $value.Count }}</li>
         {{ end }}
         </ul>
       </div>
@@ -158,7 +155,7 @@ Hugo can order the meta data in two different ways. It can be ordered:
         <ul>
         {{ $data := .Data }}
         {{ range $key, $value := .Data.Terms.ByCount }}
-          <li><a href="{{ $data.Plural }}/{{ $value.Name | urlize }}">{{ $value.Name }}</a> {{ $value.Count }}</li>
+          <li><a href="{{ .Site.LanguagePrefix }}/{{ $data.Plural }}/{{ $value.Name | urlize }}">{{ $value.Name }}</a> {{ $value.Count }}</li>
         {{ end }}
         </ul>
       </div>

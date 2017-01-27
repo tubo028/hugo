@@ -5,7 +5,7 @@ organization, tutorials, blog posts, bug reports, issues, feature requests,
 feature implementations, pull requests, answering questions on the forum,
 helping to manage issues, etc.
 
-The Hugo community and maintainers are very active and helpful, and the project benefits greatly from this activity.
+The Hugo community and maintainers are very active and helpful, and the project benefits greatly from this activity. We created a [step by step guide](https://gohugo.io/tutorials/how-to-contribute-to-hugo/) if you're unfamiliar with GitHub or contributing to open source projects in general.
 
 [![Throughput Graph](https://graphs.waffle.io/spf13/hugo/throughput.svg)](https://waffle.io/spf13/hugo/metrics)
 
@@ -61,11 +61,15 @@ To make the contribution process as seamless as possible, we ask for the followi
 This [blog article](http://chris.beams.io/posts/git-commit/) is a good resource for learning how to write good commit messages,
 the most important part being that each commit message should have a title/subject in imperative mood starting with a capital letter and no trailing period:
 *"Return error on wrong use of the Paginator"*, **NOT** *"returning some error."*
+
 Also, if your commit references one or more GitHub issues, always end your commit message body with *See #1234* or *Fixes #1234*.
 Replace *1234* with the GitHub issue ID. The last example will close the issue when the commit is merged into *master*.
+
 Sometimes it makes sense to prefix the commit message with the packagename (or docs folder) all lowercased ending with a colon.
 That is fine, but the rest of the rules above apply.
 So it is "tpl: Add emojify template func", not "tpl: add emojify template func.", and "docs: Document emoji", not "doc: document emoji."
+
+Please consider to use a short and descriptive branch name, e.g. **NOT** "patch-1". It's very common but creates a naming conflict each time when a submission is pulled for a review.
 
 An example:
 

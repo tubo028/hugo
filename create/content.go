@@ -48,7 +48,7 @@ func NewContent(fs afero.Fs, kind, name string) (err error) {
 		}
 	}
 	if location == "" || err != nil {
-		by = []byte("+++\n title = \"title\"\n draft = true \n+++\n")
+		by = []byte("+++\ndraft = true \n+++\n")
 	}
 
 	psr, err := parser.ReadFrom(bytes.NewReader(by))
@@ -62,12 +62,14 @@ func NewContent(fs afero.Fs, kind, name string) (err error) {
 		return err
 	}
 
-	page, err := hugolib.NewPage(name)
+	site := hugolib.NewSiteDefaultLang()
+
+	page, err := site.NewPage(name)
 	if err != nil {
 		return err
 	}
 
-	if err = page.SetSourceMetaData(metadata, parser.FormatToLeadRune(viper.GetString("MetaDataFormat"))); err != nil {
+	if err = page.SetSourceMetaData(metadata, parser.FormatToLeadRune(viper.GetString("metaDataFormat"))); err != nil {
 		return
 	}
 
@@ -78,7 +80,7 @@ func NewContent(fs afero.Fs, kind, name string) (err error) {
 	}
 	jww.FEEDBACK.Println(helpers.AbsPathify(filepath.Join(viper.GetString("contentDir"), name)), "created")
 
-	editor := viper.GetString("NewContentEditor")
+	editor := viper.GetString("newContentEditor")
 
 	if editor != "" {
 		jww.FEEDBACK.Printf("Editing %s with %q ...\n", name, editor)
@@ -107,38 +109,42 @@ func createMetadata(archetype parser.Page, name string) (map[string]interface{},
 		return nil, err
 	}
 
-	for k := range metadata {
-		switch strings.ToLower(k) {
-		case "date":
-			metadata[k] = time.Now()
-		case "title":
-			metadata[k] = helpers.MakeTitle(helpers.Filename(name))
-		}
-	}
+	var date time.Time
 
-	caseimatch := func(m map[string]interface{}, key string) bool {
-		for k := range m {
-			if strings.ToLower(k) == strings.ToLower(key) {
-				return true
-			}
+	for k, v := range metadata {
+		if v == "" {
+			continue
 		}
-		return false
+		lk := strings.ToLower(k)
+		switch lk {
+		case "date":
+			date, err = cast.ToTimeE(v)
+			if err != nil {
+				return nil, err
+			}
+		case "title":
+			// Use the archetype title as is
+			metadata[lk] = v
+		}
 	}
 
 	if metadata == nil {
 		metadata = make(map[string]interface{})
 	}
 
-	if !caseimatch(metadata, "date") {
-		metadata["date"] = time.Now()
+	if date.IsZero() {
+		date = time.Now()
 	}
 
-	if !caseimatch(metadata, "title") {
+	if _, ok := metadata["title"]; !ok {
 		metadata["title"] = helpers.MakeTitle(helpers.Filename(name))
 	}
 
-	if x := parser.FormatSanitize(viper.GetString("MetaDataFormat")); x == "json" || x == "yaml" || x == "toml" {
-		metadata["date"] = time.Now().Format(time.RFC3339)
+	// TOD(bep) what is this?
+	if x := parser.FormatSanitize(viper.GetString("metaDataFormat")); x == "json" || x == "yaml" || x == "toml" {
+		metadata["date"] = date.Format(time.RFC3339)
+	} else {
+		metadata["date"] = date
 	}
 
 	return metadata, nil

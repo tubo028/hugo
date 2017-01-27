@@ -97,6 +97,18 @@ One use case is the concatenation of elements in combination with `delimit`:
 ```
 
 
+### shuffle
+
+`shuffle` returns a random permutation of a given array or slice, e.g.
+
+```html
+{{ shuffle (seq 1 5) }}
+<!-- returns [2 5 3 1 4] -->
+
+{{ shuffle (slice "foo" "bar" "buzz") }}
+<!-- returns [buzz foo bar] -->
+```
+
 ### echoParam
 Prints a parameter if it is set.
 
@@ -128,7 +140,7 @@ Encodes a given object to JSON.
 
 e.g.
 
-   {{ dict "title" .Title "content" .Plain | jsonify }}
+    {{ dict "title" .Title "content" .Plain | jsonify }}
 
 ### last
 Slices an array to only the last _N_ elements.
@@ -344,7 +356,7 @@ e.g.
        {{ .Content }}
     {{ end }}
 
-## Files    
+## Files
 
 ### readDir
 
@@ -359,6 +371,16 @@ Reads a file from disk and converts it into a string. Note that the filename mus
  So, if you have a file with the name `README.txt` in the root of your project with the content `Hugo Rocks!`:
 
  `{{readFile "README.txt"}}` → `"Hugo Rocks!"`
+
+### imageConfig
+Parses the image and returns the height, width and color model.
+
+e.g.
+```
+{{ with (imageConfig "favicon.ico") }}
+favicon.ico: {{.Width}} x {{.Height}}
+{{ end }}
+```
 
 ## Math
 
@@ -422,6 +444,13 @@ e.g.
 * `{{ int "123" }}` → 123
 
 ## Strings
+
+### printf
+
+Format a string using the standard `fmt.Sprintf` function. See [the go
+doc](https://golang.org/pkg/fmt/) for reference.
+A
+e.g., `{{ i18n ( printf "combined_%s" $var ) }}` or `{{ printf "formatted %.2f" 3.1416 }}`
 
 ### chomp
 Removes any trailing newline characters. Useful in a pipeline to remove newlines added by other processing (including `markdownify`).
@@ -633,6 +662,16 @@ e.g.
 * `{{slicestr "BatMan" 3}}` → "Man"
 * `{{slicestr "BatMan" 0 3}}` → "Bat"
 
+### truncate
+
+Truncate a text to a max length without cutting words or leaving unclosed HTML tags. Since Go templates are HTML-aware, truncate will handle normal strings vs HTML strings intelligently. It's important to note that if you have a raw string that contains HTML tags that you want treated as HTML, you will need to convert the string to HTML using the safeHTML template function before sending the value to truncate; otherwise, the HTML tags will be escaped by truncate.
+
+e.g.
+
+* `{{ "this is a text" | truncate 10 " ..." }}` → `this is a ...`
+* `{{ "<em>Keep my HTML</em>" | safeHTML | truncate 10 }}` → `<em>Keep my …</em>`
+* `{{ "With [Markdown](#markdown) inside." | markdownify | truncate 10 }}` → `With <a href='#markdown'>Markdown …</a>`  
+
 ### split
 
 Split a string into substrings separated by a delimiter.
@@ -714,7 +753,6 @@ CJK-like languages.
 <!-- outputs a content length of 8 runes. -->
 ```
 
-
 ### md5
 
 `md5` hashes the given input and returns its MD5 checksum.
@@ -741,6 +779,31 @@ This can be useful if you want to use Gravatar for generating a unique avatar:
 ```
 
 
+### sha256
+
+`sha256` hashes the given input and returns its SHA256 checksum.
+
+```html
+{{ sha256 "Hello world, gophers!" }}
+<!-- returns the string "6ec43b78da9669f50e4e422575c54bf87536954ccd58280219c393f2ce352b46" -->
+```
+
+
+## Internationalization
+
+### i18n
+
+This translates a piece of content based on your `i18n/en-US.yaml`
+(and friends) files. You can use the [go-i18n](https://github.com/nicksnyder/go-i18n) tools to manage your translations.  The translations can exist in both the theme and at the root of your repository.
+
+e.g.: `{{ i18n "translation_id" }}`
+
+For more information about string translations, see [Translation of strings]({{< relref "content/multilingual.md#translation-of-strings">}}).
+
+### T
+
+`T` is an alias to `i18n`. E.g. `{{ T "translation_id" }}`.
+
 ## Times
 
 ### time
@@ -751,8 +814,18 @@ This can be useful if you want to use Gravatar for generating a unique avatar:
 * `{{ (time "2016-05-28").YearDay }}` → 149
 * `{{ mul 1000 (time "2016-05-28T10:30:00.00+10:00").Unix }}` → 1464395400000 (Unix time in milliseconds)
 
+### now
+
+`now` returns the current local time as a [`time.Time`](https://godoc.org/time#Time).
 
 ## URLs
+### absLangURL, relLangURL
+These are similar to the `absURL` and `relURL` relatives below, but will add the correct language prefix when the site is configured with more than one language.
+
+So for a site  `baseURL` set to `http://mysite.com/hugo/` and the current language is `en`:
+
+* `{{ "blog/" | absLangURL }}` → "http://mysite.com/hugo/en/blog/"
+* `{{ "blog/" | relLangURL }}` → "/hugo/en/blog/"
 
 ### absURL, relURL
 
@@ -783,7 +856,7 @@ The above also exploits the fact that the Go template parser JSON-encodes object
 
 
 ### ref, relref
-Looks up a content page by relative path or logical name to return the permalink (`ref`) or relative permalink (`relref`). Requires a Node or Page object (usually satisfied with `.`). Used in the [`ref` and `relref` shortcodes]({{% ref "extras/crossreferences.md" %}}).
+Looks up a content page by relative path or logical name to return the permalink (`ref`) or relative permalink (`relref`). Requires a `Page` object (usually satisfied with `.`). Used in the [`ref` and `relref` shortcodes]({{% ref "extras/crossreferences.md" %}}).
 
 e.g. {{ ref . "about.md" }}
 
@@ -831,6 +904,16 @@ Takes a string and sanitizes it for usage in URLs, converts spaces to "-".
 
 e.g. `<a href="/tags/{{ . | urlize }}">{{ . }}</a>`
 
+
+### querify
+
+Takes a set of key-value pairs and returns a [query string](https://en.wikipedia.org/wiki/Query_string) that can be appended to a URL. E.g.
+
+    <a href="https://www.google.com?{{ (querify "q" "test" "page" 3) | safeURL }}">Search</a>
+
+will be rendered as
+
+    <a href="https://www.google.com?page=3&q=test">Search</a>
 
 
 ## Content Views
@@ -941,3 +1024,21 @@ responses of APIs.
     {{ $resp.content | base64Decode | markdownify }}
 
 The response of the GitHub API contains the base64-encoded version of the [README.md](https://github.com/spf13/hugo/blob/master/README.md) in the Hugo repository. Now we can decode it and parse the Markdown. The final output will look similar to the rendered version on GitHub.
+
+***
+
+### partialCached
+
+See [Template Partials]({{< relref "templates/partials.md#cached-partials" >}}) for an explanation of the `partialCached` template function.
+
+
+## .Site.GetPage
+Every `Page` has a `Kind` attribute that shows what kind of page it is. While this attribute can be used to list pages of a certain `kind` using `where`, often it can be useful to fetch a single page by its path.
+
+`GetPage` looks up an index page of a given `Kind` and `path`. This method may support regular pages in the future, but currently it is a convenient way of getting the index pages, such as the home page or a section, from a template:
+
+    {{ with .Site.GetPage "section" "blog" }}{{ .Title }}{{ end }}
+
+This method wil return `nil` when no page could be found, so the above will not print anything if the blog section isn't found.
+
+The valid page kinds are: *home, section, taxonomy and taxonomyTerm.*

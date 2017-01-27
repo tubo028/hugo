@@ -28,28 +28,59 @@ import (
 	"github.com/spf13/hugo/target"
 	"github.com/spf13/hugo/tpl"
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 )
 
-func pageFromString(in, filename string) (*Page, error) {
-	return NewPageFrom(strings.NewReader(in), filename)
+// TODO(bep) remove
+func pageFromString(in, filename string, withTemplate ...func(templ tpl.Template) error) (*Page, error) {
+	s := pageTestSite
+	if len(withTemplate) > 0 {
+		// Have to create a new site
+		s = NewSiteDefaultLang(withTemplate...)
+	}
+	return s.NewPageFrom(strings.NewReader(in), filename)
 }
 
-func CheckShortCodeMatch(t *testing.T, input, expected string, template tpl.Template) {
-	CheckShortCodeMatchAndError(t, input, expected, template, false)
+func CheckShortCodeMatch(t *testing.T, input, expected string, withTemplate func(templ tpl.Template) error) {
+	CheckShortCodeMatchAndError(t, input, expected, withTemplate, false)
 }
 
-func CheckShortCodeMatchAndError(t *testing.T, input, expected string, template tpl.Template, expectError bool) {
+func CheckShortCodeMatchAndError(t *testing.T, input, expected string, withTemplate func(templ tpl.Template) error, expectError bool) {
+	testCommonResetState()
 
-	p, _ := pageFromString(simplePage, "simple.md")
-	output, err := HandleShortcodes(input, p, template)
+	// Need some front matter, see https://github.com/spf13/hugo/issues/2337
+	contentFile := `---
+title: "Title"
+---
+` + input
+
+	writeSource(t, "content/simple.md", contentFile)
+
+	h, err := newHugoSitesDefaultLanguage()
+
+	if err != nil {
+		t.Fatalf("Failed to create sites: %s", err)
+	}
+
+	cfg := BuildCfg{SkipRender: true, withTemplate: withTemplate}
+
+	err = h.Build(cfg)
 
 	if err != nil && !expectError {
-		t.Fatalf("Shortcode rendered error %s. Expected: %q, Got: %q", err, expected, output)
+		t.Fatalf("Shortcode rendered error %s.", err)
 	}
 
 	if err == nil && expectError {
 		t.Fatalf("No error from shortcode")
 	}
+
+	require.Len(t, h.Sites[0].RegularPages, 1)
+
+	output := strings.TrimSpace(string(h.Sites[0].RegularPages[0].Content))
+	output = strings.TrimPrefix(output, "<p>")
+	output = strings.TrimSuffix(output, "</p>")
+
+	expected = strings.TrimSpace(expected)
 
 	if output != expected {
 		t.Fatalf("Shortcode render didn't match. got \n%q but expected \n%q", output, expected)
@@ -57,10 +88,10 @@ func CheckShortCodeMatchAndError(t *testing.T, input, expected string, template 
 }
 
 func TestShortcodeGoFuzzReports(t *testing.T) {
-	tem := tpl.New()
 
-	tem.AddInternalShortcode("sc.html", `foo`)
-	p, _ := pageFromString(simplePage, "simple.md")
+	p, _ := pageFromString(simplePage, "simple.md", func(templ tpl.Template) error {
+		return templ.AddInternalShortcode("sc.html", `foo`)
+	})
 
 	for i, this := range []struct {
 		data      string
@@ -68,7 +99,7 @@ func TestShortcodeGoFuzzReports(t *testing.T) {
 	}{
 		{"{{</*/", true},
 	} {
-		output, err := HandleShortcodes(this.data, p, tem)
+		output, err := HandleShortcodes(this.data, p)
 
 		if this.expectErr && err == nil {
 			t.Errorf("[%d] should have errored", i)
@@ -86,115 +117,123 @@ func TestShortcodeGoFuzzReports(t *testing.T) {
 }
 
 func TestNonSC(t *testing.T) {
-	tem := tpl.New()
+
 	// notice the syntax diff from 0.12, now comment delims must be added
-	CheckShortCodeMatch(t, "{{%/* movie 47238zzb */%}}", "{{% movie 47238zzb %}}", tem)
+	CheckShortCodeMatch(t, "{{%/* movie 47238zzb */%}}", "{{% movie 47238zzb %}}", nil)
 }
 
 // Issue #929
 func TestHyphenatedSC(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("hyphenated-video.html", `Playing Video {{ .Get 0 }}`)
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("hyphenated-video.html", `Playing Video {{ .Get 0 }}`)
+		return nil
+	}
 
-	CheckShortCodeMatch(t, "{{< hyphenated-video 47238zzb >}}", "Playing Video 47238zzb", tem)
+	CheckShortCodeMatch(t, "{{< hyphenated-video 47238zzb >}}", "Playing Video 47238zzb", wt)
 }
 
 // Issue #1753
 func TestNoTrailingNewline(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("a.html", `{{ .Get 0 }}`)
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("a.html", `{{ .Get 0 }}`)
+		return nil
+	}
 
-	CheckShortCodeMatch(t, "ab{{< a c >}}d", "abcd", tem)
+	CheckShortCodeMatch(t, "ab{{< a c >}}d", "abcd", wt)
 }
 
 func TestPositionalParamSC(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("video.html", `Playing Video {{ .Get 0 }}`)
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("video.html", `Playing Video {{ .Get 0 }}`)
+		return nil
+	}
 
-	CheckShortCodeMatch(t, "{{< video 47238zzb >}}", "Playing Video 47238zzb", tem)
-	CheckShortCodeMatch(t, "{{< video 47238zzb 132 >}}", "Playing Video 47238zzb", tem)
-	CheckShortCodeMatch(t, "{{<video 47238zzb>}}", "Playing Video 47238zzb", tem)
-	CheckShortCodeMatch(t, "{{<video 47238zzb    >}}", "Playing Video 47238zzb", tem)
-	CheckShortCodeMatch(t, "{{<   video   47238zzb    >}}", "Playing Video 47238zzb", tem)
+	CheckShortCodeMatch(t, "{{< video 47238zzb >}}", "Playing Video 47238zzb", wt)
+	CheckShortCodeMatch(t, "{{< video 47238zzb 132 >}}", "Playing Video 47238zzb", wt)
+	CheckShortCodeMatch(t, "{{<video 47238zzb>}}", "Playing Video 47238zzb", wt)
+	CheckShortCodeMatch(t, "{{<video 47238zzb    >}}", "Playing Video 47238zzb", wt)
+	CheckShortCodeMatch(t, "{{<   video   47238zzb    >}}", "Playing Video 47238zzb", wt)
 }
 
 func TestPositionalParamIndexOutOfBounds(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("video.html", `Playing Video {{ .Get 1 }}`)
-	CheckShortCodeMatch(t, "{{< video 47238zzb >}}", "Playing Video error: index out of range for positional param at position 1", tem)
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("video.html", `Playing Video {{ .Get 1 }}`)
+		return nil
+	}
+	CheckShortCodeMatch(t, "{{< video 47238zzb >}}", "Playing Video error: index out of range for positional param at position 1", wt)
 }
 
 // some repro issues for panics in Go Fuzz testing
-func TestShortcodeGoFuzzRepros(t *testing.T) {
-	tt := tpl.New()
-	tt.AddInternalShortcode("inner.html", `Shortcode... {{ with .Get 0 }}{{ . }}{{ end }}-- {{ with .Get 1 }}{{ . }}{{ end }}- {{ with .Inner }}{{ . }}{{ end }}`)
-	// Issue #1337
-	CheckShortCodeMatchAndError(t, "{{%inner\"\"\"\"=\"\"", "", tt, true)
-}
 
 func TestNamedParamSC(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("img.html", `<img{{ with .Get "src" }} src="{{.}}"{{end}}{{with .Get "class"}} class="{{.}}"{{end}}>`)
-
-	CheckShortCodeMatch(t, `{{< img src="one" >}}`, `<img src="one">`, tem)
-	CheckShortCodeMatch(t, `{{< img class="aspen" >}}`, `<img class="aspen">`, tem)
-	CheckShortCodeMatch(t, `{{< img src= "one" >}}`, `<img src="one">`, tem)
-	CheckShortCodeMatch(t, `{{< img src ="one" >}}`, `<img src="one">`, tem)
-	CheckShortCodeMatch(t, `{{< img src = "one" >}}`, `<img src="one">`, tem)
-	CheckShortCodeMatch(t, `{{< img src = "one" class = "aspen grove" >}}`, `<img src="one" class="aspen grove">`, tem)
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("img.html", `<img{{ with .Get "src" }} src="{{.}}"{{end}}{{with .Get "class"}} class="{{.}}"{{end}}>`)
+		return nil
+	}
+	CheckShortCodeMatch(t, `{{< img src="one" >}}`, `<img src="one">`, wt)
+	CheckShortCodeMatch(t, `{{< img class="aspen" >}}`, `<img class="aspen">`, wt)
+	CheckShortCodeMatch(t, `{{< img src= "one" >}}`, `<img src="one">`, wt)
+	CheckShortCodeMatch(t, `{{< img src ="one" >}}`, `<img src="one">`, wt)
+	CheckShortCodeMatch(t, `{{< img src = "one" >}}`, `<img src="one">`, wt)
+	CheckShortCodeMatch(t, `{{< img src = "one" class = "aspen grove" >}}`, `<img src="one" class="aspen grove">`, wt)
 }
 
 // Issue #2294
 func TestNestedNamedMissingParam(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("acc.html", `<div class="acc">{{ .Inner }}</div>`)
-	tem.AddInternalShortcode("div.html", `<div {{with .Get "class"}} class="{{ . }}"{{ end }}>{{ .Inner }}</div>`)
-	tem.AddInternalShortcode("div2.html", `<div {{with .Get 0}} class="{{ . }}"{{ end }}>{{ .Inner }}</div>`)
-
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("acc.html", `<div class="acc">{{ .Inner }}</div>`)
+		tem.AddInternalShortcode("div.html", `<div {{with .Get "class"}} class="{{ . }}"{{ end }}>{{ .Inner }}</div>`)
+		tem.AddInternalShortcode("div2.html", `<div {{with .Get 0}} class="{{ . }}"{{ end }}>{{ .Inner }}</div>`)
+		return nil
+	}
 	CheckShortCodeMatch(t,
 		`{{% acc %}}{{% div %}}d1{{% /div %}}{{% div2 %}}d2{{% /div2 %}}{{% /acc %}}`,
-		"<div class=\"acc\"><div >d1</div><div >d2</div>\n</div>", tem)
+		"<div class=\"acc\"><div >d1</div><div >d2</div>\n</div>", wt)
 }
 
 func TestIsNamedParamsSC(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("byposition.html", `<div id="{{ .Get 0 }}">`)
-	tem.AddInternalShortcode("byname.html", `<div id="{{ .Get "id" }}">`)
-	tem.AddInternalShortcode("ifnamedparams.html", `<div id="{{ if .IsNamedParams }}{{ .Get "id" }}{{ else }}{{ .Get 0 }}{{end}}">`)
-
-	CheckShortCodeMatch(t, `{{< ifnamedparams id="name" >}}`, `<div id="name">`, tem)
-	CheckShortCodeMatch(t, `{{< ifnamedparams position >}}`, `<div id="position">`, tem)
-	CheckShortCodeMatch(t, `{{< byname id="name" >}}`, `<div id="name">`, tem)
-	CheckShortCodeMatch(t, `{{< byname position >}}`, `<div id="error: cannot access positional params by string name">`, tem)
-	CheckShortCodeMatch(t, `{{< byposition position >}}`, `<div id="position">`, tem)
-	CheckShortCodeMatch(t, `{{< byposition id="name" >}}`, `<div id="error: cannot access named params by position">`, tem)
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("byposition.html", `<div id="{{ .Get 0 }}">`)
+		tem.AddInternalShortcode("byname.html", `<div id="{{ .Get "id" }}">`)
+		tem.AddInternalShortcode("ifnamedparams.html", `<div id="{{ if .IsNamedParams }}{{ .Get "id" }}{{ else }}{{ .Get 0 }}{{end}}">`)
+		return nil
+	}
+	CheckShortCodeMatch(t, `{{< ifnamedparams id="name" >}}`, `<div id="name">`, wt)
+	CheckShortCodeMatch(t, `{{< ifnamedparams position >}}`, `<div id="position">`, wt)
+	CheckShortCodeMatch(t, `{{< byname id="name" >}}`, `<div id="name">`, wt)
+	CheckShortCodeMatch(t, `{{< byname position >}}`, `<div id="error: cannot access positional params by string name">`, wt)
+	CheckShortCodeMatch(t, `{{< byposition position >}}`, `<div id="position">`, wt)
+	CheckShortCodeMatch(t, `{{< byposition id="name" >}}`, `<div id="error: cannot access named params by position">`, wt)
 }
 
 func TestInnerSC(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("inside.html", `<div{{with .Get "class"}} class="{{.}}"{{end}}>{{ .Inner }}</div>`)
-
-	CheckShortCodeMatch(t, `{{< inside class="aspen" >}}`, `<div class="aspen"></div>`, tem)
-	CheckShortCodeMatch(t, `{{< inside class="aspen" >}}More Here{{< /inside >}}`, "<div class=\"aspen\">More Here</div>", tem)
-	CheckShortCodeMatch(t, `{{< inside >}}More Here{{< /inside >}}`, "<div>More Here</div>", tem)
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("inside.html", `<div{{with .Get "class"}} class="{{.}}"{{end}}>{{ .Inner }}</div>`)
+		return nil
+	}
+	CheckShortCodeMatch(t, `{{< inside class="aspen" >}}`, `<div class="aspen"></div>`, wt)
+	CheckShortCodeMatch(t, `{{< inside class="aspen" >}}More Here{{< /inside >}}`, "<div class=\"aspen\">More Here</div>", wt)
+	CheckShortCodeMatch(t, `{{< inside >}}More Here{{< /inside >}}`, "<div>More Here</div>", wt)
 }
 
 func TestInnerSCWithMarkdown(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("inside.html", `<div{{with .Get "class"}} class="{{.}}"{{end}}>{{ .Inner }}</div>`)
-
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("inside.html", `<div{{with .Get "class"}} class="{{.}}"{{end}}>{{ .Inner }}</div>`)
+		return nil
+	}
 	CheckShortCodeMatch(t, `{{% inside %}}
 # More Here
 
 [link](http://spf13.com) and text
 
-{{% /inside %}}`, "<div><h1 id=\"more-here\">More Here</h1>\n\n<p><a href=\"http://spf13.com\">link</a> and text</p>\n</div>", tem)
+{{% /inside %}}`, "<div><h1 id=\"more-here\">More Here</h1>\n\n<p><a href=\"http://spf13.com\">link</a> and text</p>\n</div>", wt)
 }
 
 func TestInnerSCWithAndWithoutMarkdown(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("inside.html", `<div{{with .Get "class"}} class="{{.}}"{{end}}>{{ .Inner }}</div>`)
-
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("inside.html", `<div{{with .Get "class"}} class="{{.}}"{{end}}>{{ .Inner }}</div>`)
+		return nil
+	}
 	CheckShortCodeMatch(t, `{{% inside %}}
 # More Here
 
@@ -210,67 +249,65 @@ And then:
 This is **plain** text.
 
 {{< /inside >}}
-`, "<div><h1 id=\"more-here\">More Here</h1>\n\n<p><a href=\"http://spf13.com\">link</a> and text</p>\n</div>\n\nAnd then:\n\n<div>\n# More Here\n\nThis is **plain** text.\n\n</div>\n", tem)
+`, "<div><h1 id=\"more-here\">More Here</h1>\n\n<p><a href=\"http://spf13.com\">link</a> and text</p>\n</div>\n\n<p>And then:</p>\n\n<p><div>\n# More Here\n\nThis is **plain** text.\n\n</div>", wt)
 }
 
 func TestEmbeddedSC(t *testing.T) {
-	tem := tpl.New()
-	CheckShortCodeMatch(t, "{{% test %}}", "This is a simple Test", tem)
-	CheckShortCodeMatch(t, `{{% figure src="/found/here" class="bananas orange" %}}`, "\n<figure class=\"bananas orange\">\n    \n        <img src=\"/found/here\" />\n    \n    \n</figure>\n", tem)
-	CheckShortCodeMatch(t, `{{% figure src="/found/here" class="bananas orange" caption="This is a caption" %}}`, "\n<figure class=\"bananas orange\">\n    \n        <img src=\"/found/here\" alt=\"This is a caption\" />\n    \n    \n    <figcaption>\n        <p>\n        This is a caption\n        \n            \n        \n        </p> \n    </figcaption>\n    \n</figure>\n", tem)
+	CheckShortCodeMatch(t, "{{% test %}}", "This is a simple Test", nil)
+	CheckShortCodeMatch(t, `{{% figure src="/found/here" class="bananas orange" %}}`, "\n<figure class=\"bananas orange\">\n    \n        <img src=\"/found/here\" />\n    \n    \n</figure>\n", nil)
+	CheckShortCodeMatch(t, `{{% figure src="/found/here" class="bananas orange" caption="This is a caption" %}}`, "\n<figure class=\"bananas orange\">\n    \n        <img src=\"/found/here\" alt=\"This is a caption\" />\n    \n    \n    <figcaption>\n        <p>\n        This is a caption\n        \n            \n        \n        </p> \n    </figcaption>\n    \n</figure>\n", nil)
 }
 
 func TestNestedSC(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("scn1.html", `<div>Outer, inner is {{ .Inner }}</div>`)
-	tem.AddInternalShortcode("scn2.html", `<div>SC2</div>`)
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("scn1.html", `<div>Outer, inner is {{ .Inner }}</div>`)
+		tem.AddInternalShortcode("scn2.html", `<div>SC2</div>`)
+		return nil
+	}
+	CheckShortCodeMatch(t, `{{% scn1 %}}{{% scn2 %}}{{% /scn1 %}}`, "<div>Outer, inner is <div>SC2</div>\n</div>", wt)
 
-	CheckShortCodeMatch(t, `{{% scn1 %}}{{% scn2 %}}{{% /scn1 %}}`, "<div>Outer, inner is <div>SC2</div>\n</div>", tem)
-
-	CheckShortCodeMatch(t, `{{< scn1 >}}{{% scn2 %}}{{< /scn1 >}}`, "<div>Outer, inner is <div>SC2</div></div>", tem)
+	CheckShortCodeMatch(t, `{{< scn1 >}}{{% scn2 %}}{{< /scn1 >}}`, "<div>Outer, inner is <div>SC2</div></div>", wt)
 }
 
 func TestNestedComplexSC(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("row.html", `-row-{{ .Inner}}-rowStop-`)
-	tem.AddInternalShortcode("column.html", `-col-{{.Inner    }}-colStop-`)
-	tem.AddInternalShortcode("aside.html", `-aside-{{    .Inner  }}-asideStop-`)
-
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("row.html", `-row-{{ .Inner}}-rowStop-`)
+		tem.AddInternalShortcode("column.html", `-col-{{.Inner    }}-colStop-`)
+		tem.AddInternalShortcode("aside.html", `-aside-{{    .Inner  }}-asideStop-`)
+		return nil
+	}
 	CheckShortCodeMatch(t, `{{< row >}}1-s{{% column %}}2-**s**{{< aside >}}3-**s**{{< /aside >}}4-s{{% /column %}}5-s{{< /row >}}6-s`,
-		"-row-1-s-col-2-<strong>s</strong>-aside-3-<strong>s</strong>-asideStop-4-s-colStop-5-s-rowStop-6-s", tem)
+		"-row-1-s-col-2-<strong>s</strong>-aside-3-<strong>s</strong>-asideStop-4-s-colStop-5-s-rowStop-6-s", wt)
 
 	// turn around the markup flag
 	CheckShortCodeMatch(t, `{{% row %}}1-s{{< column >}}2-**s**{{% aside %}}3-**s**{{% /aside %}}4-s{{< /column >}}5-s{{% /row %}}6-s`,
-		"-row-1-s-col-2-<strong>s</strong>-aside-3-<strong>s</strong>-asideStop-4-s-colStop-5-s-rowStop-6-s", tem)
+		"-row-1-s-col-2-<strong>s</strong>-aside-3-<strong>s</strong>-asideStop-4-s-colStop-5-s-rowStop-6-s", wt)
 }
 
 func TestParentShortcode(t *testing.T) {
-	tem := tpl.New()
-	tem.AddInternalShortcode("r1.html", `1: {{ .Get "pr1" }} {{ .Inner }}`)
-	tem.AddInternalShortcode("r2.html", `2: {{ .Parent.Get "pr1" }}{{ .Get "pr2" }} {{ .Inner }}`)
-	tem.AddInternalShortcode("r3.html", `3: {{ .Parent.Parent.Get "pr1" }}{{ .Parent.Get "pr2" }}{{ .Get "pr3" }} {{ .Inner }}`)
-
+	wt := func(tem tpl.Template) error {
+		tem.AddInternalShortcode("r1.html", `1: {{ .Get "pr1" }} {{ .Inner }}`)
+		tem.AddInternalShortcode("r2.html", `2: {{ .Parent.Get "pr1" }}{{ .Get "pr2" }} {{ .Inner }}`)
+		tem.AddInternalShortcode("r3.html", `3: {{ .Parent.Parent.Get "pr1" }}{{ .Parent.Get "pr2" }}{{ .Get "pr3" }} {{ .Inner }}`)
+		return nil
+	}
 	CheckShortCodeMatch(t, `{{< r1 pr1="p1" >}}1: {{< r2 pr2="p2" >}}2: {{< r3 pr3="p3" >}}{{< /r3 >}}{{< /r2 >}}{{< /r1 >}}`,
-		"1: p1 1: 2: p1p2 2: 3: p1p2p3 ", tem)
+		"1: p1 1: 2: p1p2 2: 3: p1p2p3 ", wt)
 
 }
 
 func TestFigureImgWidth(t *testing.T) {
-	tem := tpl.New()
-	CheckShortCodeMatch(t, `{{% figure src="/found/here" class="bananas orange" alt="apple" width="100px" %}}`, "\n<figure class=\"bananas orange\">\n    \n        <img src=\"/found/here\" alt=\"apple\" width=\"100px\" />\n    \n    \n</figure>\n", tem)
+	CheckShortCodeMatch(t, `{{% figure src="/found/here" class="bananas orange" alt="apple" width="100px" %}}`, "\n<figure class=\"bananas orange\">\n    \n        <img src=\"/found/here\" alt=\"apple\" width=\"100px\" />\n    \n    \n</figure>\n", nil)
 }
 
 func TestHighlight(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	testCommonResetState()
 
 	if !helpers.HasPygments() {
 		t.Skip("Skip test as Pygments is not installed")
 	}
-	viper.Set("PygmentsStyle", "bw")
-	viper.Set("PygmentsUseClasses", false)
-
-	templ := tpl.New()
+	viper.Set("pygmentsStyle", "bw")
+	viper.Set("pygmentsUseClasses", false)
 
 	code := `
 {{< highlight java >}}
@@ -278,7 +315,7 @@ void do();
 {{< /highlight >}}`
 
 	p, _ := pageFromString(simplePage, "simple.md")
-	output, err := HandleShortcodes(code, p, templ)
+	output, err := HandleShortcodes(code, p)
 
 	if err != nil {
 		t.Fatal("Handle shortcode error", err)
@@ -290,11 +327,11 @@ void do();
 	}
 
 	if !matched {
-		t.Error("Hightlight mismatch, got\n", output)
+		t.Errorf("Hightlight mismatch, got (escaped to see invisible chars)\n%+q", output)
 	}
 }
 
-const testScPlaceholderRegexp = "{-{-HUGOSHORTCODE-\\d+-}-}"
+const testScPlaceholderRegexp = "HAHAHUGOSHORTCODE-\\d+HBHB"
 
 func TestExtractShortcodes(t *testing.T) {
 	for i, this := range []struct {
@@ -330,31 +367,32 @@ func TestExtractShortcodes(t *testing.T) {
 			`inner([], false){[inner2-> inner2([\"param1\"], true){[inner2txt->inner3 inner3(%!q(<nil>), false){[inner3txt]}]} final close->`,
 			fmt.Sprintf("Inner->%s<-done", testScPlaceholderRegexp), ""},
 		{"two inner", `Some text. {{% inner %}}First **Inner** Content{{% / inner %}} {{< inner >}}Inner **Content**{{< / inner >}}. Some more text.`,
-			`map["{-{-HUGOSHORTCODE-1-}-}:inner([], true){[First **Inner** Content]}" "{-{-HUGOSHORTCODE-2-}-}:inner([], false){[Inner **Content**]}"]`,
+			`map["HAHAHUGOSHORTCODE-1HBHB:inner([], true){[First **Inner** Content]}" "HAHAHUGOSHORTCODE-2HBHB:inner([], false){[Inner **Content**]}"]`,
 			fmt.Sprintf("Some text. %s %s. Some more text.", testScPlaceholderRegexp, testScPlaceholderRegexp), ""},
 		{"closed without content", `Some text. {{< inner param1 >}}{{< / inner >}}. Some more text.`, `inner([\"param1\"], false){[]}`,
 			fmt.Sprintf("Some text. %s. Some more text.", testScPlaceholderRegexp), ""},
 		{"two shortcodes", "{{< sc1 >}}{{< sc2 >}}",
-			`map["{-{-HUGOSHORTCODE-1-}-}:sc1([], false){[]}" "{-{-HUGOSHORTCODE-2-}-}:sc2([], false){[]}"]`,
+			`map["HAHAHUGOSHORTCODE-1HBHB:sc1([], false){[]}" "HAHAHUGOSHORTCODE-2HBHB:sc2([], false){[]}"]`,
 			testScPlaceholderRegexp + testScPlaceholderRegexp, ""},
 		{"mix of shortcodes", `Hello {{< sc1 >}}world{{% sc2 p2="2"%}}. And that's it.`,
-			`map["{-{-HUGOSHORTCODE-1-}-}:sc1([], false){[]}" "{-{-HUGOSHORTCODE-2-}-}:sc2([\"p2:2\"]`,
+			`map["HAHAHUGOSHORTCODE-1HBHB:sc1([], false){[]}" "HAHAHUGOSHORTCODE-2HBHB:sc2([\"p2:2\"]`,
 			fmt.Sprintf("Hello %sworld%s. And that's it.", testScPlaceholderRegexp, testScPlaceholderRegexp), ""},
 		{"mix with inner", `Hello {{< sc1 >}}world{{% inner p2="2"%}}Inner{{%/ inner %}}. And that's it.`,
-			`map["{-{-HUGOSHORTCODE-1-}-}:sc1([], false){[]}" "{-{-HUGOSHORTCODE-2-}-}:inner([\"p2:2\"], true){[Inner]}"]`,
+			`map["HAHAHUGOSHORTCODE-1HBHB:sc1([], false){[]}" "HAHAHUGOSHORTCODE-2HBHB:inner([\"p2:2\"], true){[Inner]}"]`,
 			fmt.Sprintf("Hello %sworld%s. And that's it.", testScPlaceholderRegexp, testScPlaceholderRegexp), ""},
 	} {
 
-		p, _ := pageFromString(simplePage, "simple.md")
-		tem := tpl.New()
-		tem.AddInternalShortcode("tag.html", `tag`)
-		tem.AddInternalShortcode("sc1.html", `sc1`)
-		tem.AddInternalShortcode("sc2.html", `sc2`)
-		tem.AddInternalShortcode("inner.html", `{{with .Inner }}{{ . }}{{ end }}`)
-		tem.AddInternalShortcode("inner2.html", `{{.Inner}}`)
-		tem.AddInternalShortcode("inner3.html", `{{.Inner}}`)
+		p, _ := pageFromString(simplePage, "simple.md", func(templ tpl.Template) error {
+			templ.AddInternalShortcode("tag.html", `tag`)
+			templ.AddInternalShortcode("sc1.html", `sc1`)
+			templ.AddInternalShortcode("sc2.html", `sc2`)
+			templ.AddInternalShortcode("inner.html", `{{with .Inner }}{{ . }}{{ end }}`)
+			templ.AddInternalShortcode("inner2.html", `{{.Inner}}`)
+			templ.AddInternalShortcode("inner3.html", `{{.Inner}}`)
+			return nil
+		})
 
-		content, shortCodes, err := extractShortcodes(this.input, p, tem)
+		content, shortCodes, err := extractShortcodes(this.input, p)
 
 		if b, ok := this.expect.(bool); ok && !b {
 			if err == nil {
@@ -407,21 +445,24 @@ func TestExtractShortcodes(t *testing.T) {
 		if this.expectShortCodes != "" {
 			shortCodesAsStr := fmt.Sprintf("map%q", collectAndSortShortcodes(shortCodes))
 			if !strings.Contains(shortCodesAsStr, this.expectShortCodes) {
-				t.Fatalf("[%d] %s: Short codes not as expected, got %s but expected %s", i, this.name, shortCodesAsStr, this.expectShortCodes)
+				t.Fatalf("[%d] %s: Shortcodes not as expected, got %s but expected %s", i, this.name, shortCodesAsStr, this.expectShortCodes)
 			}
 		}
 	}
 }
 
 func TestShortcodesInSite(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	testCommonResetState()
 
 	baseURL := "http://foo/bar"
-	viper.Set("DefaultExtension", "html")
-	viper.Set("baseurl", baseURL)
-	viper.Set("UglyURLs", false)
+	viper.Set("defaultExtension", "html")
+	viper.Set("defaultContentLanguage", "en")
+	viper.Set("baseURL", baseURL)
+	viper.Set("uglyURLs", false)
 	viper.Set("verbose", true)
+
+	viper.Set("pygmentsUseClasses", true)
+	viper.Set("pygmentsCodefences", true)
 
 	tests := []struct {
 		contentPath string
@@ -474,10 +515,11 @@ e`,
 		// #2192 #2209: Shortcodes in markdown headers
 		{"sect/doc5.md", `# {{< b >}}	
 ## {{% c %}}`,
-			filepath.FromSlash("sect/doc5/index.html"), "\n\n<h1 id=\"hugoshortcode-1\">b</h1>\n\n<h2 id=\"hugoshortcode-2\">c</h2>\n"},
-		{"sect/doc6.md", "\n```bash\n{{< b >}}\n{{% c %}}\n```\n",
+			filepath.FromSlash("sect/doc5/index.html"), "\n\n<h1 id=\"hahahugoshortcode-1hbhb\">b</h1>\n\n<h2 id=\"hahahugoshortcode-2hbhb\">c</h2>\n"},
+		// #2223 pygments
+		{"sect/doc6.md", "\n```bash\nb: {{< b >}} c: {{% c %}}\n```\n",
 			filepath.FromSlash("sect/doc6/index.html"),
-			"<pre><code class=\"language-bash\">b\nc\n</code></pre>\n"},
+			"b: b c: c\n</code></pre></div>\n"},
 		// #2249
 		{"sect/doc7.ad", `_Shortcodes:_ *b: {{< b >}} c: {{% c %}}*`,
 			filepath.FromSlash("sect/doc7/index.html"),
@@ -485,9 +527,34 @@ e`,
 		{"sect/doc8.rst", `**Shortcodes:** *b: {{< b >}} c: {{% c %}}*`,
 			filepath.FromSlash("sect/doc8/index.html"),
 			"<div class=\"document\">\n\n\n<p><strong>Shortcodes:</strong> <em>b: b c: c</em></p>\n</div>"},
-		{"sect/doc9.mmark", `**Shortcodes:** *b: {{< b >}} c: {{% c %}}*`,
+		{"sect/doc9.mmark", `
+---
+menu:
+  main:
+    parent: 'parent'
+---
+**Shortcodes:** *b: {{< b >}} c: {{% c %}}*`,
 			filepath.FromSlash("sect/doc9/index.html"),
 			"<p><strong>Shortcodes:</strong> <em>b: b c: c</em></p>\n"},
+		// Issue #1229: Menus not available in shortcode.
+		{"sect/doc10.md", `---
+menu:
+  main:
+    identifier: 'parent'
+tags:
+- Menu
+---
+**Menus:** {{< menu >}}`,
+			filepath.FromSlash("sect/doc10/index.html"),
+			"<p><strong>Menus:</strong> 1</p>\n"},
+		// Issue #2323: Taxonomies not available in shortcode.
+		{"sect/doc11.md", `---
+tags:
+- Bugs
+---
+**Tags:** {{< tags >}}`,
+			filepath.FromSlash("sect/doc11/index.html"),
+			"<p><strong>Tags:</strong> 2</p>\n"},
 	}
 
 	sources := make([]source.ByteSource, len(tests))
@@ -497,23 +564,33 @@ e`,
 	}
 
 	s := &Site{
-		Source:  &source.InMemorySource{ByteSource: sources},
-		targets: targetList{page: &target.PagePub{UglyURLs: false}},
+		Source:   &source.InMemorySource{ByteSource: sources},
+		targets:  targetList{page: &target.PagePub{UglyURLs: false}},
+		Language: helpers.NewDefaultLanguage(),
 	}
 
-	s.initializeSiteInfo()
+	addTemplates := func(templ tpl.Template) error {
+		templ.AddTemplate("_default/single.html", "{{.Content}}")
 
-	s.loadTemplates()
+		templ.AddInternalShortcode("b.html", `b`)
+		templ.AddInternalShortcode("c.html", `c`)
+		templ.AddInternalShortcode("d.html", `d`)
+		templ.AddInternalShortcode("menu.html", `{{ len (index .Page.Menus "main").Children }}`)
+		templ.AddInternalShortcode("tags.html", `{{ len .Page.Site.Taxonomies.tags }}`)
 
-	s.Tmpl.AddTemplate("_default/single.html", "{{.Content}}")
+		return nil
 
-	s.Tmpl.AddInternalShortcode("b.html", `b`)
-	s.Tmpl.AddInternalShortcode("c.html", `c`)
-	s.Tmpl.AddInternalShortcode("d.html", `d`)
+	}
 
-	s.Tmpl.MarkReady()
+	sites, err := newHugoSites(DepsCfg{}, s)
 
-	createAndRenderPages(t, s)
+	if err != nil {
+		t.Fatalf("Failed to build site: %s", err)
+	}
+
+	if err = sites.Build(BuildCfg{withTemplate: addTemplates}); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
+	}
 
 	for _, test := range tests {
 		if strings.HasSuffix(test.contentPath, ".ad") && !helpers.HasAsciidoc() {
@@ -521,6 +598,9 @@ e`,
 			continue
 		} else if strings.HasSuffix(test.contentPath, ".rst") && !helpers.HasRst() {
 			fmt.Println("Skip Rst test case as no rst2html present.")
+			continue
+		} else if strings.Contains(test.expected, "code") && !helpers.HasPygments() {
+			fmt.Println("Skip Pygments test case as no pygments present.")
 			continue
 		}
 
@@ -532,8 +612,8 @@ e`,
 
 		content := helpers.ReaderToString(file)
 
-		if content != test.expected {
-			t.Errorf("%s content expected:\n%q\ngot:\n%q", test.outFile, test.expected, content)
+		if !strings.Contains(content, test.expected) {
+			t.Fatalf("%s content expected:\n%q\ngot:\n%q", test.outFile, test.expected, content)
 		}
 	}
 
@@ -564,11 +644,11 @@ func BenchmarkReplaceShortcodeTokens(b *testing.B) {
 		replacements map[string]string
 		expect       []byte
 	}{
-		{"Hello {-{-HUGOSHORTCODE-1-}-}.", map[string]string{"{-{-HUGOSHORTCODE-1-}-}": "World"}, []byte("Hello World.")},
-		{strings.Repeat("A", 100) + " {-{-HUGOSHORTCODE-1-}-}.", map[string]string{"{-{-HUGOSHORTCODE-1-}-}": "Hello World"}, []byte(strings.Repeat("A", 100) + " Hello World.")},
-		{strings.Repeat("A", 500) + " {-{-HUGOSHORTCODE-1-}-}.", map[string]string{"{-{-HUGOSHORTCODE-1-}-}": "Hello World"}, []byte(strings.Repeat("A", 500) + " Hello World.")},
-		{strings.Repeat("ABCD ", 500) + " {-{-HUGOSHORTCODE-1-}-}.", map[string]string{"{-{-HUGOSHORTCODE-1-}-}": "Hello World"}, []byte(strings.Repeat("ABCD ", 500) + " Hello World.")},
-		{strings.Repeat("A ", 3000) + " {-{-HUGOSHORTCODE-1-}-}." + strings.Repeat("BC ", 1000) + " {-{-HUGOSHORTCODE-1-}-}.", map[string]string{"{-{-HUGOSHORTCODE-1-}-}": "Hello World"}, []byte(strings.Repeat("A ", 3000) + " Hello World." + strings.Repeat("BC ", 1000) + " Hello World.")},
+		{"Hello HAHAHUGOSHORTCODE-1HBHB.", map[string]string{"HAHAHUGOSHORTCODE-1HBHB": "World"}, []byte("Hello World.")},
+		{strings.Repeat("A", 100) + " HAHAHUGOSHORTCODE-1HBHB.", map[string]string{"HAHAHUGOSHORTCODE-1HBHB": "Hello World"}, []byte(strings.Repeat("A", 100) + " Hello World.")},
+		{strings.Repeat("A", 500) + " HAHAHUGOSHORTCODE-1HBHB.", map[string]string{"HAHAHUGOSHORTCODE-1HBHB": "Hello World"}, []byte(strings.Repeat("A", 500) + " Hello World.")},
+		{strings.Repeat("ABCD ", 500) + " HAHAHUGOSHORTCODE-1HBHB.", map[string]string{"HAHAHUGOSHORTCODE-1HBHB": "Hello World"}, []byte(strings.Repeat("ABCD ", 500) + " Hello World.")},
+		{strings.Repeat("A ", 3000) + " HAHAHUGOSHORTCODE-1HBHB." + strings.Repeat("BC ", 1000) + " HAHAHUGOSHORTCODE-1HBHB.", map[string]string{"HAHAHUGOSHORTCODE-1HBHB": "Hello World"}, []byte(strings.Repeat("A ", 3000) + " Hello World." + strings.Repeat("BC ", 1000) + " Hello World.")},
 	}
 
 	var in = make([]input, b.N*len(data))
@@ -608,31 +688,31 @@ func TestReplaceShortcodeTokens(t *testing.T) {
 		replacements map[string]string
 		expect       interface{}
 	}{
-		{"Hello {-{-PREFIX-1-}-}.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, "Hello World."},
-		{"Hello {-{-PREFIX-1@}@.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, false},
-		{"{-{-PREFIX2-1-}-}", "PREFIX2", map[string]string{"{-{-PREFIX2-1-}-}": "World"}, "World"},
+		{"Hello HAHAPREFIX-1HBHB.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, "Hello World."},
+		{"Hello HAHAPREFIX-1@}@.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, false},
+		{"HAHAPREFIX2-1HBHB", "PREFIX2", map[string]string{"HAHAPREFIX2-1HBHB": "World"}, "World"},
 		{"Hello World!", "PREFIX2", map[string]string{}, "Hello World!"},
-		{"!{-{-PREFIX-1-}-}", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, "!World"},
-		{"{-{-PREFIX-1-}-}!", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, "World!"},
-		{"!{-{-PREFIX-1-}-}!", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, "!World!"},
-		{"_{_PREFIX-1-}-}", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, "_{_PREFIX-1-}-}"},
-		{"Hello {-{-PREFIX-1-}-}.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "To You My Old Friend Who Told Me This Fantastic Story"}, "Hello To You My Old Friend Who Told Me This Fantastic Story."},
-		{"A {-{-A-1-}-} asdf {-{-A-2-}-}.", "A", map[string]string{"{-{-A-1-}-}": "v1", "{-{-A-2-}-}": "v2"}, "A v1 asdf v2."},
-		{"Hello {-{-PREFIX2-1-}-}. Go {-{-PREFIX2-2-}-}, Go, Go {-{-PREFIX2-3-}-} Go Go!.", "PREFIX2", map[string]string{"{-{-PREFIX2-1-}-}": "Europe", "{-{-PREFIX2-2-}-}": "Jonny", "{-{-PREFIX2-3-}-}": "Johnny"}, "Hello Europe. Go Jonny, Go, Go Johnny Go Go!."},
-		{"A {-{-PREFIX-2-}-} {-{-PREFIX-1-}-}.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "A", "{-{-PREFIX-2-}-}": "B"}, "A B A."},
-		{"A {-{-PREFIX-1-}-} {-{-PREFIX-2", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "A"}, false},
-		{"A {-{-PREFIX-1-}-} but not the second.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "A", "{-{-PREFIX-2-}-}": "B"}, "A A but not the second."},
-		{"An {-{-PREFIX-1-}-}.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "A", "{-{-PREFIX-2-}-}": "B"}, "An A."},
-		{"An {-{-PREFIX-1-}-} {-{-PREFIX-2-}-}.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "A", "{-{-PREFIX-2-}-}": "B"}, "An A B."},
-		{"A {-{-PREFIX-1-}-} {-{-PREFIX-2-}-} {-{-PREFIX-3-}-} {-{-PREFIX-1-}-} {-{-PREFIX-3-}-}.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "A", "{-{-PREFIX-2-}-}": "B", "{-{-PREFIX-3-}-}": "C"}, "A A B C A C."},
-		{"A {-{-PREFIX-1-}-} {-{-PREFIX-2-}-} {-{-PREFIX-3-}-} {-{-PREFIX-1-}-} {-{-PREFIX-3-}-}.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "A", "{-{-PREFIX-2-}-}": "B", "{-{-PREFIX-3-}-}": "C"}, "A A B C A C."},
+		{"!HAHAPREFIX-1HBHB", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, "!World"},
+		{"HAHAPREFIX-1HBHB!", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, "World!"},
+		{"!HAHAPREFIX-1HBHB!", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, "!World!"},
+		{"_{_PREFIX-1HBHB", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, "_{_PREFIX-1HBHB"},
+		{"Hello HAHAPREFIX-1HBHB.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "To You My Old Friend Who Told Me This Fantastic Story"}, "Hello To You My Old Friend Who Told Me This Fantastic Story."},
+		{"A HAHAA-1HBHB asdf HAHAA-2HBHB.", "A", map[string]string{"HAHAA-1HBHB": "v1", "HAHAA-2HBHB": "v2"}, "A v1 asdf v2."},
+		{"Hello HAHAPREFIX2-1HBHB. Go HAHAPREFIX2-2HBHB, Go, Go HAHAPREFIX2-3HBHB Go Go!.", "PREFIX2", map[string]string{"HAHAPREFIX2-1HBHB": "Europe", "HAHAPREFIX2-2HBHB": "Jonny", "HAHAPREFIX2-3HBHB": "Johnny"}, "Hello Europe. Go Jonny, Go, Go Johnny Go Go!."},
+		{"A HAHAPREFIX-2HBHB HAHAPREFIX-1HBHB.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "A", "HAHAPREFIX-2HBHB": "B"}, "A B A."},
+		{"A HAHAPREFIX-1HBHB HAHAPREFIX-2", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "A"}, false},
+		{"A HAHAPREFIX-1HBHB but not the second.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "A", "HAHAPREFIX-2HBHB": "B"}, "A A but not the second."},
+		{"An HAHAPREFIX-1HBHB.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "A", "HAHAPREFIX-2HBHB": "B"}, "An A."},
+		{"An HAHAPREFIX-1HBHB HAHAPREFIX-2HBHB.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "A", "HAHAPREFIX-2HBHB": "B"}, "An A B."},
+		{"A HAHAPREFIX-1HBHB HAHAPREFIX-2HBHB HAHAPREFIX-3HBHB HAHAPREFIX-1HBHB HAHAPREFIX-3HBHB.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "A", "HAHAPREFIX-2HBHB": "B", "HAHAPREFIX-3HBHB": "C"}, "A A B C A C."},
+		{"A HAHAPREFIX-1HBHB HAHAPREFIX-2HBHB HAHAPREFIX-3HBHB HAHAPREFIX-1HBHB HAHAPREFIX-3HBHB.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "A", "HAHAPREFIX-2HBHB": "B", "HAHAPREFIX-3HBHB": "C"}, "A A B C A C."},
 		// Issue #1148 remove p-tags 10 =>
-		{"Hello <p>{-{-PREFIX-1-}-}</p>. END.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, "Hello World. END."},
-		{"Hello <p>{-{-PREFIX-1-}-}</p>. <p>{-{-PREFIX-2-}-}</p> END.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World", "{-{-PREFIX-2-}-}": "THE"}, "Hello World. THE END."},
-		{"Hello <p>{-{-PREFIX-1-}-}. END</p>.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, "Hello <p>World. END</p>."},
-		{"<p>Hello {-{-PREFIX-1-}-}</p>. END.", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, "<p>Hello World</p>. END."},
-		{"Hello <p>{-{-PREFIX-1-}-}12", "PREFIX", map[string]string{"{-{-PREFIX-1-}-}": "World"}, "Hello <p>World12"},
-		{"Hello {-{-P-1-}-}. {-{-P-1-}-}-{-{-P-1-}-} {-{-P-1-}-} {-{-P-1-}-} {-{-P-1-}-} END", "P", map[string]string{"{-{-P-1-}-}": strings.Repeat("BC", 100)},
+		{"Hello <p>HAHAPREFIX-1HBHB</p>. END.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, "Hello World. END."},
+		{"Hello <p>HAHAPREFIX-1HBHB</p>. <p>HAHAPREFIX-2HBHB</p> END.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World", "HAHAPREFIX-2HBHB": "THE"}, "Hello World. THE END."},
+		{"Hello <p>HAHAPREFIX-1HBHB. END</p>.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, "Hello <p>World. END</p>."},
+		{"<p>Hello HAHAPREFIX-1HBHB</p>. END.", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, "<p>Hello World</p>. END."},
+		{"Hello <p>HAHAPREFIX-1HBHB12", "PREFIX", map[string]string{"HAHAPREFIX-1HBHB": "World"}, "Hello <p>World12"},
+		{"Hello HAHAP-1HBHB. HAHAP-1HBHB-HAHAP-1HBHB HAHAP-1HBHB HAHAP-1HBHB HAHAP-1HBHB END", "P", map[string]string{"HAHAP-1HBHB": strings.Repeat("BC", 100)},
 			fmt.Sprintf("Hello %s. %s-%s %s %s %s END",
 				strings.Repeat("BC", 100), strings.Repeat("BC", 100), strings.Repeat("BC", 100), strings.Repeat("BC", 100), strings.Repeat("BC", 100), strings.Repeat("BC", 100))},
 	} {

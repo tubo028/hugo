@@ -19,21 +19,26 @@ import (
 	"strings"
 
 	"github.com/spf13/hugo/helpers"
+	"github.com/spf13/viper"
 )
 
 // File represents a source content file.
 // All paths are relative from the source directory base
 type File struct {
-	relpath     string // Original relative path, e.g. content/foo.txt
+	relpath     string // Original relative path, e.g. section/foo.txt
 	logicalName string // foo.txt
+	baseName    string // `post` for `post.md`, also `post.en` for `post.en.md`
 	Contents    io.Reader
 	section     string // The first directory
 	dir         string // The relative directory Path (minus file name)
 	ext         string // Just the ext (eg txt)
-	uniqueID    string // MD5 of the filename
+	uniqueID    string // MD5 of the file's path
+
+	translationBaseName string // `post` for `post.es.md` (if `Multilingual` is enabled.)
+	lang                string // The language code if `Multilingual` is enabled
 }
 
-// UniqueID is the MD5 hash of the filename and is for most practical applications,
+// UniqueID is the MD5 hash of the file's path and is for most practical applications,
 // Hugo content files being one of them, considered to be unique.
 func (f *File) UniqueID() string {
 	return f.uniqueID
@@ -49,9 +54,20 @@ func (f *File) Bytes() []byte {
 	return helpers.ReaderToBytes(f.Contents)
 }
 
-// BaseFileName Filename without extension.
+// BaseFileName is a filename without extension.
 func (f *File) BaseFileName() string {
-	return helpers.Filename(f.LogicalName())
+	return f.baseName
+}
+
+// TranslationBaseName is a filename with no extension,
+// not even the optional language extension part.
+func (f *File) TranslationBaseName() string {
+	return f.translationBaseName
+}
+
+// Lang for this page, if `Multilingual` is enabled on your site.
+func (f *File) Lang() string {
+	return f.lang
 }
 
 // Section is first directory below the content root.
@@ -86,17 +102,18 @@ func (f *File) Ext() string {
 	return f.Extension()
 }
 
-// Path gets the relative path including file name and extension from
-// the base of the source directory.
+// Path gets the relative path including file name and extension.
+// The directory is relative to the content root.
 func (f *File) Path() string {
 	return f.relpath
 }
 
 // NewFileWithContents creates a new File pointer with the given relative path and
-// content.
+// content. The language defaults to "en".
 func NewFileWithContents(relpath string, content io.Reader) *File {
 	file := NewFile(relpath)
 	file.Contents = content
+	file.lang = "en"
 	return file
 }
 
@@ -108,8 +125,19 @@ func NewFile(relpath string) *File {
 
 	f.dir, f.logicalName = filepath.Split(f.relpath)
 	f.ext = strings.TrimPrefix(filepath.Ext(f.LogicalName()), ".")
+	f.baseName = helpers.Filename(f.LogicalName())
+
+	lang := strings.TrimPrefix(filepath.Ext(f.baseName), ".")
+	if _, ok := viper.GetStringMap("languages")[lang]; lang == "" || !ok {
+		f.lang = viper.GetString("defaultContentLanguage")
+		f.translationBaseName = f.baseName
+	} else {
+		f.lang = lang
+		f.translationBaseName = helpers.Filename(f.baseName)
+	}
+
 	f.section = helpers.GuessSection(f.Dir())
-	f.uniqueID = helpers.Md5String(f.LogicalName())
+	f.uniqueID = helpers.Md5String(f.Path())
 
 	return f
 }

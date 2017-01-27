@@ -32,14 +32,18 @@ Users can specify the `type` and `layout` in the [front-matter](/content/front-m
 is determined based on the content file’s location. If `type` is provided,
 it will be used instead of `section`.
 
-### Single
+### Single Page
 
-* /layouts/`TYPE`-or-`SECTION`/`LAYOUT`.html
-* /layouts/`TYPE`-or-`SECTION`/single.html
-* /layouts/\_default/single.html
-* /themes/`THEME`/layouts/`TYPE`-or-`SECTION`/`LAYOUT`.html
-* /themes/`THEME`/layouts/`TYPE`-or-`SECTION`/single.html
-* /themes/`THEME`/layouts/\_default/single.html
+* /layouts/`TYPE`/`LAYOUT`.html
+* /layouts/`SECTION`/`LAYOUT`.html
+* /layouts/`TYPE`/single.html
+* /layouts/`SECTION`/single.html
+* /layouts/_default/single.html
+* /themes/`THEME`/layouts/`TYPE`/`LAYOUT`.html
+* /themes/`THEME`/layouts/`SECTION`/`LAYOUT`.html
+* /themes/`THEME`/layouts/`TYPE`/single.html
+* /themes/`THEME`/layouts/`SECTION`/single.html
+* /themes/`THEME`/layouts/_default/single.html
 
 ## Example Single Template File
 
@@ -69,7 +73,7 @@ It makes use of [partial templates](/templates/partials/)
 
     {{ partial "header.html" . }}
     {{ partial "subheader.html" . }}
-    {{ $baseurl := .Site.BaseURL }}
+    {{ $baseURL := .Site.BaseURL }}
 
     <section id="main">
       <h1 id="title">{{ .Title }}</h1>
@@ -88,12 +92,12 @@ It makes use of [partial templates](/templates/partials/)
         </section>
         <ul id="categories">
           {{ range .Params.topics }}
-            <li><a href="{{ $baseurl }}/topics/{{ . | urlize }}">{{ . }}</a> </li>
+            <li><a href="{{ $baseURL }}/topics/{{ . | urlize }}">{{ . }}</a> </li>
           {{ end }}
         </ul>
         <ul id="tags">
           {{ range .Params.tags }}
-            <li> <a href="{{ $baseurl }}/tags/{{ . | urlize }}">{{ . }}</a> </li>
+            <li> <a href="{{ $baseURL }}/tags/{{ . | urlize }}">{{ . }}</a> </li>
           {{ end }}
         </ul>
         </div>
@@ -118,7 +122,7 @@ It makes use of [partial templates](/templates/partials/)
 
     {{ partial "header.html" . }}
     {{ partial "subheader.html" . }}
-    {{ $baseurl := .Site.BaseURL }}
+    {{ $baseURL := .Site.BaseURL }}
 
     <section id="main">
       <h1 id="title">{{ .Title }}</h1>
@@ -137,12 +141,12 @@ It makes use of [partial templates](/templates/partials/)
         </section>
         <ul id="categories">
           {{ range .Params.topics }}
-          <li><a href="{{ $baseurl }}/topics/{{ . | urlize }}">{{ . }}</a> </li>
+          <li><a href="{{ $baseURL }}/topics/{{ . | urlize }}">{{ . }}</a> </li>
           {{ end }}
         </ul>
         <ul id="tags">
           {{ range .Params.tags }}
-            <li> <a href="{{ $baseurl }}/tags/{{ . | urlize }}">{{ . }}</a> </li>
+            <li> <a href="{{ $baseURL }}/tags/{{ . | urlize }}">{{ . }}</a> </li>
           {{ end }}
         </ul>
         </div>

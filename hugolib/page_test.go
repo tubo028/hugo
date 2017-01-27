@@ -14,8 +14,10 @@
 package hugolib
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -27,6 +29,7 @@ import (
 	"github.com/spf13/hugo/helpers"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var emptyPage = ""
@@ -130,6 +133,15 @@ Summary Next Line
 
 <!--more-->
 Some more text
+`
+
+	simplePageWithSummaryDelimiterAndMarkdownThatCrossesBorder = `---
+title: Simple
+---
+The [best static site generator][hugo].[^1]
+<!--more-->
+[hugo]: http://gohugo.io/
+[^1]: Many people say so.
 `
 	simplePageWithShortcodeInSummary = `---
 title: Simple
@@ -453,6 +465,8 @@ activity = "exam"
 Hi.
 `
 
+var pageTestSite = NewSiteDefaultLang()
+
 func checkError(t *testing.T, err error, expected string) {
 	if err == nil {
 		t.Fatalf("err is nil.  Expected: %s", expected)
@@ -464,7 +478,7 @@ func checkError(t *testing.T, err error, expected string) {
 
 func TestDegenerateEmptyPageZeroLengthName(t *testing.T) {
 
-	_, err := NewPage("")
+	_, err := pageTestSite.NewPage("")
 	if err == nil {
 		t.Fatalf("A zero length page name must return an error")
 	}
@@ -473,7 +487,7 @@ func TestDegenerateEmptyPageZeroLengthName(t *testing.T) {
 }
 
 func TestDegenerateEmptyPage(t *testing.T) {
-	_, err := NewPageFrom(strings.NewReader(emptyPage), "test")
+	_, err := pageTestSite.NewPageFrom(strings.NewReader(emptyPage), "test")
 	if err != nil {
 		t.Fatalf("Empty files should not trigger an error. Should be able to touch a file while watching without erroring out.")
 	}
@@ -485,10 +499,23 @@ func checkPageTitle(t *testing.T, page *Page, title string) {
 	}
 }
 
-func checkPageContent(t *testing.T, page *Page, content string) {
-	if page.Content != template.HTML(content) {
-		t.Fatalf("Page content is:\n%q\nExpected:\n%q", page.Content, content)
+func checkPageContent(t *testing.T, page *Page, content string, msg ...interface{}) {
+	a := normalizeContent(content)
+	b := normalizeContent(string(page.Content))
+	if a != b {
+		t.Fatalf("Page content is:\n%q\nExpected:\n%q (%q)", b, a, msg)
 	}
+}
+
+func normalizeContent(c string) string {
+	norm := c
+	norm = strings.Replace(norm, "\n", " ", -1)
+	norm = strings.Replace(norm, "    ", " ", -1)
+	norm = strings.Replace(norm, "   ", " ", -1)
+	norm = strings.Replace(norm, "  ", " ", -1)
+	norm = strings.Replace(norm, "p> ", "p>", -1)
+	norm = strings.Replace(norm, ">  <", "> <", -1)
+	return strings.TrimSpace(norm)
 }
 
 func checkPageTOC(t *testing.T, page *Page, toc string) {
@@ -497,9 +524,11 @@ func checkPageTOC(t *testing.T, page *Page, toc string) {
 	}
 }
 
-func checkPageSummary(t *testing.T, page *Page, summary string) {
-	if page.Summary != template.HTML(summary) {
-		t.Fatalf("Page summary is: %q.\nExpected %q", page.Summary, summary)
+func checkPageSummary(t *testing.T, page *Page, summary string, msg ...interface{}) {
+	a := normalizeContent(string(page.Summary))
+	b := normalizeContent(summary)
+	if a != b {
+		t.Fatalf("Page summary is:\n%q.\nExpected\n%q (%q)", a, b, msg)
 	}
 }
 
@@ -511,7 +540,7 @@ func checkPageType(t *testing.T, page *Page, pageType string) {
 
 func checkPageLayout(t *testing.T, page *Page, layout ...string) {
 	if !listEqual(page.layouts(), layout) {
-		t.Fatalf("Page layout is: %s.  Expected: %s", page.layouts(), layout)
+		t.Fatalf("Page layout is:\n%s.  Expected:\n%s", page.layouts(), layout)
 	}
 }
 
@@ -534,220 +563,390 @@ func checkTruncation(t *testing.T, page *Page, shouldBe bool, msg string) {
 	}
 }
 
-func TestCreateNewPage(t *testing.T) {
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePage))
-	p.Convert()
+func normalizeExpected(ext, str string) string {
+	str = normalizeContent(str)
+	switch ext {
+	default:
+		return str
+	case "html":
+		return strings.Trim(helpers.StripHTML(str), " ")
+	case "ad":
+		paragraphs := strings.Split(str, "</p>")
+		expected := ""
+		for _, para := range paragraphs {
+			if para == "" {
+				continue
+			}
+			expected += fmt.Sprintf("<div class=\"paragraph\">\n%s</p></div>\n", para)
+		}
+		return expected
+	case "rst":
+		return fmt.Sprintf("<div class=\"document\">\n\n\n%s</div>", str)
+	}
+}
 
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+func testAllMarkdownEnginesForPages(t *testing.T,
+	assertFunc func(t *testing.T, ext string, pages Pages), settings map[string]interface{}, pageSources ...string) {
+
+	engines := []struct {
+		ext           string
+		shouldExecute func() bool
+	}{
+		{"md", func() bool { return true }},
+		{"mmark", func() bool { return true }},
+		{"ad", func() bool { return helpers.HasAsciidoc() }},
+		// TODO(bep) figure a way to include this without too much work.{"html", func() bool { return true }},
+		{"rst", func() bool { return helpers.HasRst() }},
 	}
 
-	assert.False(t, p.IsHome)
-	checkPageTitle(t, p, "Simple")
-	checkPageContent(t, p, "<p>Simple Page</p>\n")
-	checkPageSummary(t, p, "Simple Page")
-	checkPageType(t, p, "page")
-	checkPageLayout(t, p, "page/single.html", "_default/single.html", "theme/page/single.html", "theme/_default/single.html")
-	checkTruncation(t, p, false, "simple short page")
+	for _, e := range engines {
+		if !e.shouldExecute() {
+			continue
+		}
+
+		testCommonResetState()
+
+		if settings != nil {
+			for k, v := range settings {
+				viper.Set(k, v)
+			}
+		}
+
+		contentDir := "content"
+
+		if s := viper.GetString("contentDir"); s != "" {
+			contentDir = s
+		}
+
+		var fileSourcePairs []string
+
+		for i, source := range pageSources {
+			fileSourcePairs = append(fileSourcePairs, fmt.Sprintf("p%d.%s", i, e.ext), source)
+		}
+
+		for i := 0; i < len(fileSourcePairs); i += 2 {
+			writeSource(t, filepath.Join(contentDir, fileSourcePairs[i]), fileSourcePairs[i+1])
+		}
+
+		s := NewSiteDefaultLang()
+
+		if err := buildSiteSkipRender(s); err != nil {
+			t.Fatalf("Failed to build site: %s", err)
+		}
+
+		require.Len(t, s.RegularPages, len(pageSources))
+
+		assertFunc(t, e.ext, s.RegularPages)
+
+	}
+
+}
+
+func TestCreateNewPage(t *testing.T) {
+
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+
+		// issue #2290: Path is relative to the content dir and will continue to be so.
+		require.Equal(t, filepath.FromSlash(fmt.Sprintf("p0.%s", ext)), p.Path())
+		assert.False(t, p.IsHome())
+		checkPageTitle(t, p, "Simple")
+		checkPageContent(t, p, normalizeExpected(ext, "<p>Simple Page</p>\n"))
+		checkPageSummary(t, p, "Simple Page")
+		checkPageType(t, p, "page")
+		checkPageLayout(t, p, "page/single.html", "_default/single.html", "theme/page/single.html", "theme/_default/single.html")
+		checkTruncation(t, p, false, "simple short page")
+	}
+
+	settings := map[string]interface{}{
+		"contentDir": "mycontent",
+	}
+
+	testAllMarkdownEnginesForPages(t, assertFunc, settings, simplePage)
+}
+
+func TestSplitSummaryAndContent(t *testing.T) {
+
+	for i, this := range []struct {
+		markup                        string
+		content                       string
+		expectedSummary               string
+		expectedContent               string
+		expectedContentWithoutSummary string
+	}{
+		{"markdown", `<p>Summary Same LineHUGOMORE42</p>
+
+<p>Some more text</p>`, "<p>Summary Same Line</p>", "<p>Summary Same Line</p>\n\n<p>Some more text</p>", "<p>Some more text</p>"},
+		{"asciidoc", `<div class="paragraph"><p>sn</p></div><div class="paragraph"><p>HUGOMORE42Some more text</p></div>`,
+			"<div class=\"paragraph\"><p>sn</p></div>",
+			"<div class=\"paragraph\"><p>sn</p></div><div class=\"paragraph\"><p>Some more text</p></div>",
+			"<div class=\"paragraph\"><p>Some more text</p></div>"},
+		{"rst",
+			"<div class=\"document\"><p>Summary Next Line</p><p>HUGOMORE42Some more text</p></div>",
+			"<div class=\"document\"><p>Summary Next Line</p></div>",
+			"<div class=\"document\"><p>Summary Next Line</p><p>Some more text</p></div>",
+			"<div class=\"document\"><p>Some more text</p></div>"},
+		{"markdown", "<p>a</p><p>b</p><p>HUGOMORE42c</p>", "<p>a</p><p>b</p>", "<p>a</p><p>b</p><p>c</p>", "<p>c</p>"},
+		{"markdown", "<p>a</p><p>b</p><p>cHUGOMORE42</p>", "<p>a</p><p>b</p><p>c</p>", "<p>a</p><p>b</p><p>c</p>", ""},
+		{"markdown", "<p>a</p><p>bHUGOMORE42</p><p>c</p>", "<p>a</p><p>b</p>", "<p>a</p><p>b</p><p>c</p>", "<p>c</p>"},
+		{"markdown", "<p>aHUGOMORE42</p><p>b</p><p>c</p>", "<p>a</p>", "<p>a</p><p>b</p><p>c</p>", "<p>b</p><p>c</p>"},
+		{"markdown", "  HUGOMORE42 ", "", "", ""},
+		{"markdown", "HUGOMORE42", "", "", ""},
+		{"markdown", "<p>HUGOMORE42", "<p>", "<p>", ""},
+		{"markdown", "HUGOMORE42<p>", "", "<p>", "<p>"},
+		{"markdown", "\n\n<p>HUGOMORE42</p>\n", "<p></p>", "<p></p>", ""},
+		// Issue #2586
+		// Note: Hugo will not split mid-sentence but will look for the closest
+		// paragraph end marker. This may be a change from Hugo 0.16, but it makes sense.
+		{"markdown", `<p>this is an example HUGOMORE42of the issue.</p>`,
+			"<p>this is an example of the issue.</p>",
+			"<p>this is an example of the issue.</p>", ""},
+		// Issue: #2538
+		{"markdown", fmt.Sprintf(` <p class="lead">%s</p>HUGOMORE42<p>%s</p>
+`,
+			strings.Repeat("A", 10), strings.Repeat("B", 31)),
+			fmt.Sprintf(`<p class="lead">%s</p>`, strings.Repeat("A", 10)),
+			fmt.Sprintf(`<p class="lead">%s</p><p>%s</p>`, strings.Repeat("A", 10), strings.Repeat("B", 31)),
+			fmt.Sprintf(`<p>%s</p>`, strings.Repeat("B", 31)),
+		},
+	} {
+
+		sc, err := splitUserDefinedSummaryAndContent(this.markup, []byte(this.content))
+
+		require.NoError(t, err)
+		require.NotNil(t, sc, fmt.Sprintf("[%d] Nil %s", i, this.markup))
+		require.Equal(t, this.expectedSummary, string(sc.summary), fmt.Sprintf("[%d] Summary markup %s", i, this.markup))
+		require.Equal(t, this.expectedContent, string(sc.content), fmt.Sprintf("[%d] Content markup %s", i, this.markup))
+		require.Equal(t, this.expectedContentWithoutSummary, string(sc.contentWithoutSummary), fmt.Sprintf("[%d] Content without summary, markup %s", i, this.markup))
+	}
 }
 
 func TestPageWithDelimiter(t *testing.T) {
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithSummaryDelimiter))
-	p.Convert()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+		checkPageTitle(t, p, "Simple")
+		checkPageContent(t, p, normalizeExpected(ext, "<p>Summary Next Line</p>\n\n<p>Some more text</p>\n"), ext)
+		checkPageSummary(t, p, normalizeExpected(ext, "<p>Summary Next Line</p>"), ext)
+		checkPageType(t, p, "page")
+		checkPageLayout(t, p, "page/single.html", "_default/single.html", "theme/page/single.html", "theme/_default/single.html")
+		checkTruncation(t, p, true, "page with summary delimiter")
 	}
-	checkPageTitle(t, p, "Simple")
-	checkPageContent(t, p, "<p>Summary Next Line</p>\n\n<p>Some more text</p>\n")
-	checkPageSummary(t, p, "<p>Summary Next Line</p>\n")
-	checkPageType(t, p, "page")
-	checkPageLayout(t, p, "page/single.html", "_default/single.html", "theme/page/single.html", "theme/_default/single.html")
-	checkTruncation(t, p, true, "page with summary delimiter")
+
+	testAllMarkdownEnginesForPages(t, assertFunc, nil, simplePageWithSummaryDelimiter)
+}
+
+// Issue #1076
+func TestPageWithDelimiterForMarkdownThatCrossesBorder(t *testing.T) {
+	s := newSiteFromSources("simple.md", simplePageWithSummaryDelimiterAndMarkdownThatCrossesBorder)
+
+	if err := buildSiteSkipRender(s); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
+	}
+
+	require.Len(t, s.RegularPages, 1)
+
+	p := s.RegularPages[0]
+
+	if p.Summary != template.HTML("<p>The <a href=\"http://gohugo.io/\">best static site generator</a>.<sup class=\"footnote-ref\" id=\"fnref:1\"><a rel=\"footnote\" href=\"#fn:1\">1</a></sup>\n</p>") {
+		t.Fatalf("Got summary:\n%q", p.Summary)
+	}
+
+	if p.Content != template.HTML("<p>The <a href=\"http://gohugo.io/\">best static site generator</a>.<sup class=\"footnote-ref\" id=\"fnref:1\"><a rel=\"footnote\" href=\"#fn:1\">1</a></sup>\n</p>\n<div class=\"footnotes\">\n\n<hr />\n\n<ol>\n<li id=\"fn:1\">Many people say so.\n <a class=\"footnote-return\" href=\"#fnref:1\"><sup>[return]</sup></a></li>\n</ol>\n</div>") {
+		t.Fatalf("Got content:\n%q", p.Content)
+	}
+}
+
+// Issue #2601
+func TestPageRawContent(t *testing.T) {
+	s := newSiteFromSources("raw.md", `---
+title: Raw
+---
+**Raw**`)
+
+	writeSource(t, filepath.Join("layouts", "_default", "single.html"), `{{ .RawContent }}`)
+
+	if err := buildSiteSkipRender(s); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
+	}
+
+	require.Len(t, s.RegularPages, 1)
+	p := s.RegularPages[0]
+
+	require.Contains(t, p.RawContent(), "**Raw**")
+
 }
 
 func TestPageWithShortCodeInSummary(t *testing.T) {
-	s := new(Site)
-	s.prepTemplates()
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithShortcodeInSummary))
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
-	}
-	p.Convert()
 
-	checkPageTitle(t, p, "Simple")
-	checkPageContent(t, p, "<p>Summary Next Line. \n<figure >\n    \n        <img src=\"/not/real\" />\n    \n    \n</figure>\n.\nMore text here.</p>\n\n<p>Some more text</p>\n")
-	checkPageSummary(t, p, "Summary Next Line. . More text here. Some more text")
-	checkPageType(t, p, "page")
-	checkPageLayout(t, p, "page/single.html", "_default/single.html", "theme/page/single.html", "theme/_default/single.html")
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+		checkPageTitle(t, p, "Simple")
+		checkPageContent(t, p, normalizeExpected(ext, "<p>Summary Next Line. \n<figure >\n    \n        <img src=\"/not/real\" />\n    \n    \n</figure>\n.\nMore text here.</p>\n\n<p>Some more text</p>\n"))
+		checkPageSummary(t, p, "Summary Next Line.  . More text here. Some more text")
+		checkPageType(t, p, "page")
+		checkPageLayout(t, p, "page/single.html", "_default/single.html", "theme/page/single.html", "theme/_default/single.html")
+	}
+
+	testAllMarkdownEnginesForPages(t, assertFunc, nil, simplePageWithShortcodeInSummary)
 }
 
 func TestPageWithEmbeddedScriptTag(t *testing.T) {
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithEmbeddedScript))
-	p.Convert()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+		if ext == "ad" || ext == "rst" {
+			// TOD(bep)
+			return
+		}
+		checkPageContent(t, p, "<script type='text/javascript'>alert('the script tags are still there, right?');</script>\n", ext)
 	}
-	checkPageContent(t, p, "<script type='text/javascript'>alert('the script tags are still there, right?');</script>\n")
+
+	testAllMarkdownEnginesForPages(t, assertFunc, nil, simplePageWithEmbeddedScript)
 }
 
 func TestPageWithAdditionalExtension(t *testing.T) {
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithAdditionalExtension))
-	p.Convert()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+	s := newSiteFromSources("simple.md", simplePageWithAdditionalExtension)
+
+	if err := buildSiteSkipRender(s); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
 	}
+
+	require.Len(t, s.RegularPages, 1)
+
+	p := s.RegularPages[0]
+
 	checkPageContent(t, p, "<p>first line.<br />\nsecond line.</p>\n\n<p>fourth line.</p>\n")
 }
 
 func TestTableOfContents(t *testing.T) {
-	p, _ := NewPage("tocpage.md")
-	_, err := p.ReadFrom(strings.NewReader(pageWithToC))
-	p.Convert()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+	s := newSiteFromSources("tocpage.md", pageWithToC)
+
+	if err := buildSiteSkipRender(s); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
 	}
+
+	require.Len(t, s.RegularPages, 1)
+
+	p := s.RegularPages[0]
+
 	checkPageContent(t, p, "\n\n<p>For some moments the old man did not reply. He stood with bowed head, buried in deep thought. But at last he spoke.</p>\n\n<h2 id=\"aa\">AA</h2>\n\n<p>I have no idea, of course, how long it took me to reach the limit of the plain,\nbut at last I entered the foothills, following a pretty little canyon upward\ntoward the mountains. Beside me frolicked a laughing brooklet, hurrying upon\nits noisy way down to the silent sea. In its quieter pools I discovered many\nsmall fish, of four-or five-pound weight I should imagine. In appearance,\nexcept as to size and color, they were not unlike the whale of our own seas. As\nI watched them playing about I discovered, not only that they suckled their\nyoung, but that at intervals they rose to the surface to breathe as well as to\nfeed upon certain grasses and a strange, scarlet lichen which grew upon the\nrocks just above the water line.</p>\n\n<h3 id=\"aaa\">AAA</h3>\n\n<p>I remember I felt an extraordinary persuasion that I was being played with,\nthat presently, when I was upon the very verge of safety, this mysterious\ndeath&ndash;as swift as the passage of light&ndash;would leap after me from the pit about\nthe cylinder and strike me down. ## BB</p>\n\n<h3 id=\"bbb\">BBB</h3>\n\n<p>&ldquo;You&rsquo;re a great Granser,&rdquo; he cried delightedly, &ldquo;always making believe them little marks mean something.&rdquo;</p>\n")
 	checkPageTOC(t, p, "<nav id=\"TableOfContents\">\n<ul>\n<li>\n<ul>\n<li><a href=\"#aa\">AA</a>\n<ul>\n<li><a href=\"#aaa\">AAA</a></li>\n<li><a href=\"#bbb\">BBB</a></li>\n</ul></li>\n</ul></li>\n</ul>\n</nav>")
 }
 
 func TestPageWithMoreTag(t *testing.T) {
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithSummaryDelimiterSameLine))
-	p.Convert()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+		checkPageTitle(t, p, "Simple")
+		checkPageContent(t, p, normalizeExpected(ext, "<p>Summary Same Line</p>\n\n<p>Some more text</p>\n"))
+		checkPageSummary(t, p, normalizeExpected(ext, "<p>Summary Same Line</p>"))
+		checkPageType(t, p, "page")
+		checkPageLayout(t, p, "page/single.html", "_default/single.html", "theme/page/single.html", "theme/_default/single.html")
+
 	}
-	checkPageTitle(t, p, "Simple")
-	checkPageContent(t, p, "<p>Summary Same Line</p>\n\n<p>Some more text</p>\n")
-	checkPageSummary(t, p, "<p>Summary Same Line</p>\n")
-	checkPageType(t, p, "page")
-	checkPageLayout(t, p, "page/single.html", "_default/single.html", "theme/page/single.html", "theme/_default/single.html")
+
+	testAllMarkdownEnginesForPages(t, assertFunc, nil, simplePageWithSummaryDelimiterSameLine)
 }
 
 func TestPageWithDate(t *testing.T) {
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageRFC3339Date))
-	p.Convert()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+	s := newSiteFromSources("simple.md", simplePageRFC3339Date)
+
+	if err := buildSiteSkipRender(s); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
 	}
-	d, err := time.Parse(time.RFC3339, "2013-05-17T16:59:30Z")
-	if err != nil {
-		t.Fatalf("Unable to prase page.")
-	}
+
+	require.Len(t, s.RegularPages, 1)
+
+	p := s.RegularPages[0]
+	d, _ := time.Parse(time.RFC3339, "2013-05-17T16:59:30Z")
+
 	checkPageDate(t, p, d)
 }
 
 func TestWordCountWithAllCJKRunesWithoutHasCJKLanguage(t *testing.T) {
-	viper.Reset()
+	testCommonResetState()
 
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithAllCJKRunes))
-	p.Convert()
-	p.analyzePage()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+		if p.WordCount() != 8 {
+			t.Fatalf("[%s] incorrect word count for content '%s'. expected %v, got %v", ext, p.plain, 8, p.WordCount())
+		}
 	}
 
-	if p.WordCount != 8 {
-		t.Fatalf("incorrect word count for content '%s'. expected %v, got %v", p.plain, 8, p.WordCount)
-	}
+	testAllMarkdownEnginesForPages(t, assertFunc, nil, simplePageWithAllCJKRunes)
 }
 
 func TestWordCountWithAllCJKRunesHasCJKLanguage(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	settings := map[string]interface{}{"hasCJKLanguage": true}
 
-	viper.Set("HasCJKLanguage", true)
-
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithAllCJKRunes))
-	p.Convert()
-	p.analyzePage()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+		if p.WordCount() != 15 {
+			t.Fatalf("[%s] incorrect word count for content '%s'. expected %v, got %v", ext, p.plain, 15, p.WordCount())
+		}
 	}
-
-	if p.WordCount != 15 {
-		t.Fatalf("incorrect word count for content '%s'. expected %v, got %v", p.plain, 15, p.WordCount)
-	}
+	testAllMarkdownEnginesForPages(t, assertFunc, settings, simplePageWithAllCJKRunes)
 }
 
 func TestWordCountWithMainEnglishWithCJKRunes(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	settings := map[string]interface{}{"hasCJKLanguage": true}
 
-	viper.Set("HasCJKLanguage", true)
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+		if p.WordCount() != 74 {
+			t.Fatalf("[%s] incorrect word count for content '%s'. expected %v, got %v", ext, p.plain, 74, p.WordCount())
+		}
 
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithMainEnglishWithCJKRunes))
-	p.Convert()
-	p.analyzePage()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+		if p.Summary != simplePageWithMainEnglishWithCJKRunesSummary {
+			t.Fatalf("[%s] incorrect Summary for content '%s'. expected %v, got %v", ext, p.plain,
+				simplePageWithMainEnglishWithCJKRunesSummary, p.Summary)
+		}
 	}
 
-	if p.WordCount != 74 {
-		t.Fatalf("incorrect word count for content '%s'. expected %v, got %v", p.plain, 74, p.WordCount)
-	}
-
-	if p.Summary != simplePageWithMainEnglishWithCJKRunesSummary {
-		t.Fatalf("incorrect Summary for content '%s'. expected %v, got %v", p.plain,
-			simplePageWithMainEnglishWithCJKRunesSummary, p.Summary)
-	}
+	testAllMarkdownEnginesForPages(t, assertFunc, settings, simplePageWithMainEnglishWithCJKRunes)
 }
 
 func TestWordCountWithIsCJKLanguageFalse(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	testCommonResetState()
+	viper.Set("hasCJKLanguage", true)
 
-	viper.Set("HasCJKLanguage", true)
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+		if p.WordCount() != 75 {
+			t.Fatalf("[%s] incorrect word count for content '%s'. expected %v, got %v", ext, p.plain, 74, p.WordCount())
+		}
 
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithIsCJKLanguageFalse))
-	p.Convert()
-	p.analyzePage()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+		if p.Summary != simplePageWithIsCJKLanguageFalseSummary {
+			t.Fatalf("[%s] incorrect Summary for content '%s'. expected %v, got %v", ext, p.plain,
+				simplePageWithIsCJKLanguageFalseSummary, p.Summary)
+		}
 	}
 
-	if p.WordCount != 75 {
-		t.Fatalf("incorrect word count for content '%s'. expected %v, got %v", p.plain, 75, p.WordCount)
-	}
+	testAllMarkdownEnginesForPages(t, assertFunc, nil, simplePageWithIsCJKLanguageFalse)
 
-	if p.Summary != simplePageWithIsCJKLanguageFalseSummary {
-		t.Fatalf("incorrect Summary for content '%s'. expected %v, got %v", p.plain,
-			simplePageWithIsCJKLanguageFalseSummary, p.Summary)
-	}
 }
 
 func TestWordCount(t *testing.T) {
-	p, _ := NewPage("simple.md")
-	_, err := p.ReadFrom(strings.NewReader(simplePageWithLongContent))
-	p.Convert()
-	p.analyzePage()
-	if err != nil {
-		t.Fatalf("Unable to create a page with frontmatter and body content: %s", err)
+
+	assertFunc := func(t *testing.T, ext string, pages Pages) {
+		p := pages[0]
+		if p.WordCount() != 483 {
+			t.Fatalf("[%s] incorrect word count. expected %v, got %v", ext, 483, p.WordCount())
+		}
+
+		if p.FuzzyWordCount() != 500 {
+			t.Fatalf("[%s] incorrect word count. expected %v, got %v", ext, 500, p.WordCount())
+		}
+
+		if p.ReadingTime() != 3 {
+			t.Fatalf("[%s] incorrect min read. expected %v, got %v", ext, 3, p.ReadingTime())
+		}
+
+		checkTruncation(t, p, true, "long page")
 	}
 
-	if p.WordCount != 483 {
-		t.Fatalf("incorrect word count. expected %v, got %v", 483, p.WordCount)
-	}
-
-	if p.FuzzyWordCount != 500 {
-		t.Fatalf("incorrect word count. expected %v, got %v", 500, p.WordCount)
-	}
-
-	if p.ReadingTime != 3 {
-		t.Fatalf("incorrect min read. expected %v, got %v", 3, p.ReadingTime)
-	}
-
-	checkTruncation(t, p, true, "long page")
+	testAllMarkdownEnginesForPages(t, assertFunc, nil, simplePageWithLongContent)
 }
 
 func TestCreatePage(t *testing.T) {
@@ -761,7 +960,7 @@ func TestCreatePage(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		p, _ := NewPage("page")
+		p, _ := pageTestSite.NewPage("page")
 		if _, err := p.ReadFrom(strings.NewReader(test.r)); err != nil {
 			t.Errorf("Unable to parse page: %s", err)
 		}
@@ -777,7 +976,7 @@ func TestDegenerateInvalidFrontMatterShortDelim(t *testing.T) {
 	}
 	for _, test := range tests {
 
-		p, _ := NewPage("invalid/front/matter/short/delim")
+		p, _ := pageTestSite.NewPage("invalid/front/matter/short/delim")
 		_, err := p.ReadFrom(strings.NewReader(test.r))
 		checkError(t, err, test.err)
 	}
@@ -800,7 +999,7 @@ func TestShouldRenderContent(t *testing.T) {
 
 	for _, test := range tests {
 
-		p, _ := NewPage("render/front/matter")
+		p, _ := pageTestSite.NewPage("render/front/matter")
 		_, err := p.ReadFrom(strings.NewReader(test.text))
 		p = pageMust(p, err)
 		if p.IsRenderable() != test.render {
@@ -811,13 +1010,13 @@ func TestShouldRenderContent(t *testing.T) {
 
 // Issue #768
 func TestCalendarParamsVariants(t *testing.T) {
-	pageJSON, _ := NewPage("test/fileJSON.md")
+	pageJSON, _ := pageTestSite.NewPage("test/fileJSON.md")
 	_, _ = pageJSON.ReadFrom(strings.NewReader(pageWithCalendarJSONFrontmatter))
 
-	pageYAML, _ := NewPage("test/fileYAML.md")
+	pageYAML, _ := pageTestSite.NewPage("test/fileYAML.md")
 	_, _ = pageYAML.ReadFrom(strings.NewReader(pageWithCalendarYAMLFrontmatter))
 
-	pageTOML, _ := NewPage("test/fileTOML.md")
+	pageTOML, _ := pageTestSite.NewPage("test/fileTOML.md")
 	_, _ = pageTOML.ReadFrom(strings.NewReader(pageWithCalendarTOMLFrontmatter))
 
 	assert.True(t, compareObjects(pageJSON.Params, pageYAML.Params))
@@ -826,7 +1025,7 @@ func TestCalendarParamsVariants(t *testing.T) {
 }
 
 func TestDifferentFrontMatterVarTypes(t *testing.T) {
-	page, _ := NewPage("test/file1.md")
+	page, _ := pageTestSite.NewPage("test/file1.md")
 	_, _ = page.ReadFrom(strings.NewReader(pageWithVariousFrontmatterTypes))
 
 	dateval, _ := time.Parse(time.RFC3339, "1979-05-27T07:32:00Z")
@@ -855,7 +1054,7 @@ func TestDifferentFrontMatterVarTypes(t *testing.T) {
 }
 
 func TestDegenerateInvalidFrontMatterLeadingWhitespace(t *testing.T) {
-	p, _ := NewPage("invalid/front/matter/leading/ws")
+	p, _ := pageTestSite.NewPage("invalid/front/matter/leading/ws")
 	_, err := p.ReadFrom(strings.NewReader(invalidFrontmatterLadingWs))
 	if err != nil {
 		t.Fatalf("Unable to parse front matter given leading whitespace: %s", err)
@@ -863,7 +1062,7 @@ func TestDegenerateInvalidFrontMatterLeadingWhitespace(t *testing.T) {
 }
 
 func TestSectionEvaluation(t *testing.T) {
-	page, _ := NewPage(filepath.FromSlash("blue/file1.md"))
+	page, _ := pageTestSite.NewPage(filepath.FromSlash("blue/file1.md"))
 	page.ReadFrom(strings.NewReader(simplePage))
 	if page.Section() != "blue" {
 		t.Errorf("Section should be %s, got: %s", "blue", page.Section())
@@ -908,7 +1107,7 @@ func TestLayoutOverride(t *testing.T) {
 		{simplePageTypeLayout, pathNoDirectory, L("barfoo/buzfoo.html", "_default/buzfoo.html")},
 	}
 	for _, test := range tests {
-		p, _ := NewPage(test.path)
+		p, _ := pageTestSite.NewPage(test.path)
 		_, err := p.ReadFrom(strings.NewReader(test.content))
 		if err != nil {
 			t.Fatalf("Unable to parse content:\n%s\n", test.content)
@@ -944,10 +1143,9 @@ func TestSliceToLower(t *testing.T) {
 }
 
 func TestPagePaths(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	testCommonResetState()
 
-	viper.Set("DefaultExtension", "html")
+	viper.Set("defaultExtension", "html")
 	siteParmalinksSetting := PermalinkOverrides{
 		"post": ":year/:month/:day/:title/",
 	}
@@ -969,11 +1167,12 @@ func TestPagePaths(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		p, _ := NewPageFrom(strings.NewReader(test.content), filepath.FromSlash(test.path))
-		p.Node.Site = &SiteInfo{}
+		p, _ := pageTestSite.NewPageFrom(strings.NewReader(test.content), filepath.FromSlash(test.path))
+		info := newSiteInfo(siteBuilderCfg{language: helpers.NewDefaultLanguage()})
+		p.Site = &info
 
 		if test.hasPermalink {
-			p.Node.Site.Permalinks = siteParmalinksSetting
+			p.Site.Permalinks = siteParmalinksSetting
 		}
 
 		expectedTargetPath := filepath.FromSlash(test.expected)
@@ -998,13 +1197,13 @@ some content
 `
 
 func TestDraftAndPublishedFrontMatterError(t *testing.T) {
-	_, err := NewPageFrom(strings.NewReader(pageWithDraftAndPublished), "content/post/broken.md")
+	_, err := pageTestSite.NewPageFrom(strings.NewReader(pageWithDraftAndPublished), "content/post/broken.md")
 	if err != ErrHasDraftAndPublished {
 		t.Errorf("expected ErrHasDraftAndPublished, was %#v", err)
 	}
 }
 
-var pageWithPublishedFalse = `---
+var pagesWithPublishedFalse = `---
 title: okay
 published: false
 ---
@@ -1018,19 +1217,104 @@ some content
 `
 
 func TestPublishedFrontMatter(t *testing.T) {
-	p, err := NewPageFrom(strings.NewReader(pageWithPublishedFalse), "content/post/broken.md")
+	p, err := pageTestSite.NewPageFrom(strings.NewReader(pagesWithPublishedFalse), "content/post/broken.md")
 	if err != nil {
 		t.Fatalf("err during parse: %s", err)
 	}
 	if !p.Draft {
 		t.Errorf("expected true, got %t", p.Draft)
 	}
-	p, err = NewPageFrom(strings.NewReader(pageWithPublishedTrue), "content/post/broken.md")
+	p, err = pageTestSite.NewPageFrom(strings.NewReader(pageWithPublishedTrue), "content/post/broken.md")
 	if err != nil {
 		t.Fatalf("err during parse: %s", err)
 	}
 	if p.Draft {
 		t.Errorf("expected false, got %t", p.Draft)
+	}
+}
+
+var pagesDraftTemplate = []string{`---
+title: "okay"
+draft: %t
+---
+some content
+`,
+	`+++
+title = "okay"
+draft = %t
++++
+
+some content
+`,
+}
+
+func TestDraft(t *testing.T) {
+	for _, draft := range []bool{true, false} {
+		for i, templ := range pagesDraftTemplate {
+			pageContent := fmt.Sprintf(templ, draft)
+			p, err := pageTestSite.NewPageFrom(strings.NewReader(pageContent), "content/post/broken.md")
+			if err != nil {
+				t.Fatalf("err during parse: %s", err)
+			}
+			if p.Draft != draft {
+				t.Errorf("[%d] expected %t, got %t", i, draft, p.Draft)
+			}
+		}
+	}
+}
+
+var pagesParamsTemplate = []string{`+++
+title = "okay"
+draft = false
+tags = [ "hugo", "web" ]
+social= [
+  [ "a", "#" ],
+  [ "b", "#" ],
+]
++++
+some content
+`,
+	`---
+title: "okay"
+draft: false
+tags:
+  - hugo
+  - web
+social:
+  - - a
+    - "#"
+  - - b
+    - "#"
+---
+some content
+`,
+	`{
+	"title": "okay",
+	"draft": false,
+	"tags": [ "hugo", "web" ],
+	"social": [
+		[ "a", "#" ],
+		[ "b", "#" ]
+	]
+}
+some content
+`,
+}
+
+func TestPageParams(t *testing.T) {
+	want := map[string]interface{}{
+		"tags": []string{"hugo", "web"},
+		// Issue #2752
+		"social": []interface{}{
+			[]interface{}{"a", "#"},
+			[]interface{}{"b", "#"},
+		},
+	}
+
+	for i, c := range pagesParamsTemplate {
+		p, err := pageTestSite.NewPageFrom(strings.NewReader(c), "content/post/params.md")
+		require.NoError(t, err, "err during parse", "#%d", i)
+		assert.Equal(t, want, p.Params, "#%d", i)
 	}
 }
 
@@ -1044,7 +1328,7 @@ func TestPageSimpleMethods(t *testing.T) {
 		{func(p *Page) bool { return strings.Join(p.PlainWords(), " ") == "Do Be Do Be Do" }},
 	} {
 
-		p, _ := NewPage("Test")
+		p, _ := pageTestSite.NewPage("Test")
 		p.Content = "<h1>Do Be Do Be Do</h1>"
 		if !this.assertFunc(p) {
 			t.Errorf("[%d] Page method error", i)
@@ -1052,15 +1336,51 @@ func TestPageSimpleMethods(t *testing.T) {
 	}
 }
 
-func TestChompBOM(t *testing.T) {
-	p, _ := NewPage("simple.md")
-	const utf8BOM = "\xef\xbb\xbf"
-	_, err := p.ReadFrom(strings.NewReader(utf8BOM + simplePage))
-	p.Convert()
+func TestIndexPageSimpleMethods(t *testing.T) {
+	for i, this := range []struct {
+		assertFunc func(n *Page) bool
+	}{
+		{func(n *Page) bool { return n.IsNode() }},
+		{func(n *Page) bool { return !n.IsPage() }},
+		{func(n *Page) bool { return n.RSSLink == "rssLink" }},
+		{func(n *Page) bool { return n.Scratch() != nil }},
+		{func(n *Page) bool { return n.Hugo() != nil }},
+		{func(n *Page) bool { return n.Now().Unix() == time.Now().Unix() }},
+	} {
 
-	if err != nil {
-		t.Fatalf("Unable to create a page with BOM prefixed frontmatter and body content: %s", err)
+		n := &Page{pageInit: &pageInit{}, Kind: KindHome}
+
+		n.RSSLink = "rssLink"
+
+		if !this.assertFunc(n) {
+			t.Errorf("[%d] Node method error", i)
+		}
 	}
+}
+
+func TestKind(t *testing.T) {
+
+	// Add tests for these constants to make sure they don't change
+	require.Equal(t, "page", KindPage)
+	require.Equal(t, "home", KindHome)
+	require.Equal(t, "section", KindSection)
+	require.Equal(t, "taxonomy", KindTaxonomy)
+	require.Equal(t, "taxonomyTerm", KindTaxonomyTerm)
+
+}
+
+func TestChompBOM(t *testing.T) {
+	const utf8BOM = "\xef\xbb\xbf"
+
+	s := newSiteFromSources("simple.md", utf8BOM+simplePage)
+
+	if err := buildSiteSkipRender(s); err != nil {
+		t.Fatalf("Failed to build site: %s", err)
+	}
+
+	require.Len(t, s.RegularPages, 1)
+
+	p := s.RegularPages[0]
 
 	checkPageTitle(t, p, "Simple")
 }
@@ -1133,5 +1453,16 @@ func TestShouldBuild(t *testing.T) {
 		if s != ps.out {
 			t.Errorf("AssertShouldBuild unexpected output with params: %+v", ps)
 		}
+	}
+}
+
+func BenchmarkParsePage(b *testing.B) {
+	f, _ := os.Open("testdata/redis.cn.md")
+	var buf bytes.Buffer
+	buf.ReadFrom(f)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		page, _ := pageTestSite.NewPage("bench")
+		page.ReadFrom(bytes.NewReader(buf.Bytes()))
 	}
 }

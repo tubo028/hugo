@@ -90,7 +90,7 @@ func init() {
 	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 1313, "port on which the server will listen")
 	serverCmd.Flags().StringVarP(&serverInterface, "bind", "", "127.0.0.1", "interface to which the server will bind")
 	serverCmd.Flags().BoolVarP(&serverWatch, "watch", "w", true, "watch filesystem for changes and recreate as needed")
-	serverCmd.Flags().BoolVarP(&serverAppend, "appendPort", "", true, "append port to baseurl")
+	serverCmd.Flags().BoolVarP(&serverAppend, "appendPort", "", true, "append port to baseURL")
 	serverCmd.Flags().BoolVar(&disableLiveReload, "disableLiveReload", false, "watch without enabling live browser reload on rebuild")
 	serverCmd.Flags().BoolVar(&renderToDisk, "renderToDisk", false, "render to Destination path (default is render to memory & serve from there)")
 	serverCmd.Flags().String("memstats", "", "log memory usage to this file")
@@ -104,21 +104,22 @@ func init() {
 }
 
 func server(cmd *cobra.Command, args []string) error {
-	if err := InitializeConfig(serverCmd); err != nil {
+	cfg, err := InitializeConfig(serverCmd)
+	if err != nil {
 		return err
 	}
 
 	if flagChanged(cmd.Flags(), "disableLiveReload") {
-		viper.Set("DisableLiveReload", disableLiveReload)
+		viper.Set("disableLiveReload", disableLiveReload)
 	}
 
 	if serverWatch {
-		viper.Set("Watch", true)
+		viper.Set("watch", true)
 	}
 
 	if viper.GetBool("watch") {
 		serverWatch = true
-		watchConfig()
+		watchConfig(cfg)
 	}
 
 	l, err := net.Listen("tcp", net.JoinHostPort(serverInterface, strconv.Itoa(serverPort)))
@@ -139,11 +140,11 @@ func server(cmd *cobra.Command, args []string) error {
 
 	viper.Set("port", serverPort)
 
-	BaseURL, err := fixURL(baseURL)
+	baseURL, err = fixURL(baseURL)
 	if err != nil {
 		return err
 	}
-	viper.Set("BaseURL", BaseURL)
+	viper.Set("baseURL", baseURL)
 
 	if err := memStats(); err != nil {
 		jww.ERROR.Println("memstats error:", err)
@@ -158,17 +159,17 @@ func server(cmd *cobra.Command, args []string) error {
 	if !renderToDisk {
 		hugofs.SetDestination(new(afero.MemMapFs))
 		// Rendering to memoryFS, publish to Root regardless of publishDir.
-		viper.Set("PublishDir", "/")
+		viper.Set("publishDir", "/")
 	}
 
-	if err := build(serverWatch); err != nil {
+	if err := build(cfg, serverWatch); err != nil {
 		return err
 	}
 
 	// Watch runs its own server as part of the routine
 	if serverWatch {
 		watchDirs := getDirList()
-		baseWatchDir := viper.GetString("WorkingDir")
+		baseWatchDir := viper.GetString("workingDir")
 		for i, dir := range watchDirs {
 			watchDirs[i], _ = helpers.GetRelativePath(dir, baseWatchDir)
 		}
@@ -176,7 +177,7 @@ func server(cmd *cobra.Command, args []string) error {
 		rootWatchDirs := strings.Join(helpers.UniqueStrings(helpers.ExtractRootPaths(watchDirs)), ",")
 
 		jww.FEEDBACK.Printf("Watching for changes in %s%s{%s}\n", baseWatchDir, helpers.FilePathSeparator, rootWatchDirs)
-		err := NewWatcher(serverPort)
+		err := newWatcher(cfg, serverPort)
 
 		if err != nil {
 			return err
@@ -190,19 +191,19 @@ func server(cmd *cobra.Command, args []string) error {
 
 func serve(port int) {
 	if renderToDisk {
-		jww.FEEDBACK.Println("Serving pages from " + helpers.AbsPathify(viper.GetString("PublishDir")))
+		jww.FEEDBACK.Println("Serving pages from " + helpers.AbsPathify(viper.GetString("publishDir")))
 	} else {
 		jww.FEEDBACK.Println("Serving pages from memory")
 	}
 
 	httpFs := afero.NewHttpFs(hugofs.Destination())
-	fs := filesOnlyFs{httpFs.Dir(helpers.AbsPathify(viper.GetString("PublishDir")))}
+	fs := filesOnlyFs{httpFs.Dir(helpers.AbsPathify(viper.GetString("publishDir")))}
 	fileserver := http.FileServer(fs)
 
 	// We're only interested in the path
-	u, err := url.Parse(viper.GetString("BaseURL"))
+	u, err := url.Parse(viper.GetString("baseURL"))
 	if err != nil {
-		jww.ERROR.Fatalf("Invalid BaseURL: %s", err)
+		jww.ERROR.Fatalf("Invalid baseURL: %s", err)
 	}
 	if u.Path == "" || u.Path == "/" {
 		http.Handle("/", fileserver)
@@ -211,7 +212,7 @@ func serve(port int) {
 	}
 
 	jww.FEEDBACK.Printf("Web Server is available at %s (bind address %s)\n", u.String(), serverInterface)
-	fmt.Println("Press Ctrl+C to stop")
+	jww.FEEDBACK.Println("Press Ctrl+C to stop")
 
 	endpoint := net.JoinHostPort(serverInterface, strconv.Itoa(port))
 	err = http.ListenAndServe(endpoint, nil)
@@ -221,12 +222,12 @@ func serve(port int) {
 	}
 }
 
-// fixURL massages the BaseURL into a form needed for serving
+// fixURL massages the baseURL into a form needed for serving
 // all pages correctly.
 func fixURL(s string) (string, error) {
 	useLocalhost := false
 	if s == "" {
-		s = viper.GetString("BaseURL")
+		s = viper.GetString("baseURL")
 		useLocalhost = true
 	}
 
@@ -262,7 +263,7 @@ func fixURL(s string) (string, error) {
 		if strings.Contains(u.Host, ":") {
 			u.Host, _, err = net.SplitHostPort(u.Host)
 			if err != nil {
-				return "", fmt.Errorf("Failed to split BaseURL hostpost: %s", err)
+				return "", fmt.Errorf("Failed to split baseURL hostpost: %s", err)
 			}
 		}
 		u.Host += fmt.Sprintf(":%d", serverPort)

@@ -114,17 +114,6 @@ func (i item) String() string {
 
 type itemType int
 
-// named params in shortcodes
-type namedParam struct {
-	name  string
-	value string
-}
-
-// for testing
-func (np namedParam) String() string {
-	return fmt.Sprintf("%s=%s", np.name, np.value)
-}
-
 const (
 	tError itemType = iota
 	tEOF
@@ -345,6 +334,7 @@ func lexShortcodeComment(l *pagelexer) stateFunc {
 }
 
 func lexShortcodeRightDelim(l *pagelexer) stateFunc {
+	l.closingState = 0
 	l.pos += pos(len(l.currentRightShortcodeDelim()))
 	l.emit(l.currentRightShortcodeDelimItem())
 	return lexTextOutsideShortcodes

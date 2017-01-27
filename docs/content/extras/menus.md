@@ -5,10 +5,9 @@ toc: true
 menu:
   main:
     parent: extras
-next: /extras/permalinks
+next: /extras/pagination
 prev: /extras/livereload
 title: Menus
-weight: 60
 ---
 
 Hugo has a simple yet powerful menu system that permits content to be
@@ -29,6 +28,8 @@ Some of the features of Hugo Menus:
 A menu is a named array of menu entries accessible on the site under
 `.Site.Menus` by name. For example, if I have a menu called `main`, I would
 access it via `.Site.Menus.main`.
+
+If you make use of the [multilingual feature]({{< relref "content/multilingual.md#menus">}}) you can define menus language independent.
 
 A menu entry has the following properties:
 
@@ -125,7 +126,7 @@ And the equivalent example `config.yaml`:
     ---
 
 
-**NOTE:** The URLs must be relative to the context root. If the `BaseURL` is `http://example.com/mysite/`, then the URLs in the menu must not include the context root `mysite`.
+**NOTE:** The URLs must be relative to the context root. If the `baseURL` is `http://example.com/mysite/`, then the URLs in the menu must not include the context root `mysite`. Using an absolute URL will overide the baseURL. If the `URL` is `http://subdomain.example.com/`, the output will be `http://subdomain.example.com`.
 
 ## Nesting
 
@@ -134,9 +135,9 @@ All nesting of content is done via the `parent` field.
 The parent of an entry should be the identifier of another entry.
 Identifier should be unique (within a menu).
 
-The following order is used to determine an Identifier:   
+The following order is used to determine an Identifier:
 
-> Name > LinkTitle > Title. 
+> Name > LinkTitle > Title.
 
 This means that the title will be used unless
 linktitle is present, etc. In practice Name and Identifier are never
@@ -160,11 +161,11 @@ The following is an example:
         <div id="sidebar" class="nav-collapse">
             <!-- sidebar menu start-->
             <ul class="sidebar-menu">
-              {{ $currentNode := . }}
+              {{ $currentPage := . }}
               {{ range .Site.Menus.main }}
                   {{ if .HasChildren }}
 
-                <li class="sub-menu{{if $currentNode.HasMenuCurrent "main" . }} active{{end}}">
+                <li class="sub-menu{{if $currentPage.HasMenuCurrent "main" . }} active{{end}}">
                 <a href="javascript:;" class="">
                     {{ .Pre }}
                     <span>{{ .Name }}</span>
@@ -172,12 +173,12 @@ The following is an example:
                 </a>
                 <ul class="sub">
                     {{ range .Children }}
-                    <li{{if $currentNode.IsMenuCurrent "main" . }} class="active"{{end}}><a href="{{.URL}}"> {{ .Name }} </a> </li>
+                    <li{{if $currentPage.IsMenuCurrent "main" . }} class="active"{{end}}><a href="{{.URL}}"> {{ .Name }} </a> </li>
                     {{ end }}
                 </ul>
               {{else}}
                 <li>
-                <a class="" href="{{.URL}}">
+                <a href="{{.URL}}">
                     {{ .Pre }}
                     <span>{{ .Name }}</span>
                 </a>
@@ -192,6 +193,7 @@ The following is an example:
     </aside>
     <!--sidebar end-->
 
+> **Note**: use the `absLangURL` or `relLangURL` if your theme makes use of the [multilingual feature]({{< relref "content/multilingual.md" >}}). In contrast to `absURL` and `relURL` it adds the correct language prefix to the url. [Read more]({{< relref "templates/functions.md#urls" >}}).
 
 ## Section Menu for "the Lazy Blogger"
 
@@ -207,9 +209,9 @@ This will create a menu with all the sections as menu items and all the sections
 
 ```
   <nav class="sidebar-nav">
-        {{ $currentNode := . }}
+        {{ $currentPage := . }}
         {{ range .Site.Menus.main }}
-        <a class="sidebar-nav-item{{if or ($currentNode.IsMenuCurrent "main" .) ($currentNode.HasMenuCurrent "main" .) }} active{{end}}" href="{{.URL}}">{{ .Name }}</a>
+        <a class="sidebar-nav-item{{if or ($currentPage.IsMenuCurrent "main" .) ($currentPage.HasMenuCurrent "main" .) }} active{{end}}" href="{{.URL}}">{{ .Name }}</a>
         {{ end }}
     </nav>
 

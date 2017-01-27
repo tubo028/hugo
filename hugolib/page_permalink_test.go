@@ -18,13 +18,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/hugo/helpers"
 	"github.com/spf13/hugo/source"
 	"github.com/spf13/viper"
 )
 
 func TestPermalink(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	testCommonResetState()
 
 	tests := []struct {
 		file         string
@@ -59,21 +59,20 @@ func TestPermalink(t *testing.T) {
 		{"x/y/z/boofar.md", "", "", "/z/y/q/", false, false, "/z/y/q/", "/z/y/q/"},
 	}
 
-	viper.Set("DefaultExtension", "html")
-
+	viper.Set("defaultExtension", "html")
 	for i, test := range tests {
-		viper.Set("uglyurls", test.uglyURLs)
-		viper.Set("canonifyurls", test.canonifyURLs)
+		viper.Set("uglyURLs", test.uglyURLs)
+		viper.Set("canonifyURLs", test.canonifyURLs)
+		info := newSiteInfo(siteBuilderCfg{baseURL: string(test.base), language: helpers.NewDefaultLanguage()})
+
 		p := &Page{
-			Node: Node{
-				URLPath: URLPath{
-					Section: "z",
-					URL:     test.url,
-				},
-				Site: &SiteInfo{
-					BaseURL: test.base,
-				},
+			pageInit: &pageInit{},
+			Kind:     KindPage,
+			URLPath: URLPath{
+				Section: "z",
+				URL:     test.url,
 			},
+			Site:   &info,
 			Source: Source{File: *source.NewFile(filepath.FromSlash(test.file))},
 		}
 
@@ -83,20 +82,14 @@ func TestPermalink(t *testing.T) {
 			})
 		}
 
-		u, err := p.Permalink()
-		if err != nil {
-			t.Errorf("Test %d: Unable to process permalink: %s", i, err)
-		}
+		u := p.Permalink()
 
 		expected := test.expectedAbs
 		if u != expected {
 			t.Errorf("Test %d: Expected abs url: %s, got: %s", i, expected, u)
 		}
 
-		u, err = p.RelPermalink()
-		if err != nil {
-			t.Errorf("Test %d: Unable to process permalink: %s", i, err)
-		}
+		u = p.RelPermalink()
 
 		expected = test.expectedRel
 		if u != expected {

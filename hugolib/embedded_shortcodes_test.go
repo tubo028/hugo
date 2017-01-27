@@ -14,18 +14,28 @@
 package hugolib
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
-	"github.com/spf13/hugo/helpers"
+	"io/ioutil"
+	"log"
+	"path/filepath"
+
 	"github.com/spf13/hugo/tpl"
+
+	"github.com/spf13/hugo/helpers"
+	jww "github.com/spf13/jwalterweatherman"
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 )
+
+var logger = jww.NewNotepad(jww.LevelFatal, jww.LevelFatal, os.Stdout, ioutil.Discard, "", log.Ldate|log.Ltime)
 
 const (
 	baseURL = "http://foo/bar"
@@ -38,6 +48,9 @@ func TestShortcodeCrossrefs(t *testing.T) {
 }
 
 func doTestShortcodeCrossrefs(t *testing.T, relative bool) {
+	testCommonResetState()
+	viper.Set("baseURL", baseURL)
+
 	var refShortcode string
 	var expectedBase string
 
@@ -51,35 +64,32 @@ func doTestShortcodeCrossrefs(t *testing.T, relative bool) {
 
 	path := filepath.FromSlash("blog/post.md")
 	in := fmt.Sprintf(`{{< %s "%s" >}}`, refShortcode, path)
+
+	writeSource(t, "content/"+path, simplePageWithURL+": "+in)
+
 	expected := fmt.Sprintf(`%s/simple/url/`, expectedBase)
 
-	templ := tpl.New()
-	p, _ := pageFromString(simplePageWithURL, path)
-	p.Node.Site = &SiteInfo{
-		Pages:   &(Pages{p}),
-		BaseURL: template.URL(helpers.SanitizeURLKeepTrailingSlash(baseURL)),
-	}
+	sites, err := newHugoSitesDefaultLanguage()
+	require.NoError(t, err)
 
-	output, err := HandleShortcodes(in, p, templ)
+	require.NoError(t, sites.Build(BuildCfg{}))
+	require.Len(t, sites.Sites[0].RegularPages, 1)
 
-	if err != nil {
-		t.Fatal("Handle shortcode error", err)
-	}
+	output := string(sites.Sites[0].RegularPages[0].Content)
 
-	if output != expected {
+	if !strings.Contains(output, expected) {
 		t.Errorf("Got\n%q\nExpected\n%q", output, expected)
 	}
 }
 
 func TestShortcodeHighlight(t *testing.T) {
-	viper.Reset()
-	defer viper.Reset()
+	testCommonResetState()
 
 	if !helpers.HasPygments() {
 		t.Skip("Skip test as Pygments is not installed")
 	}
-	viper.Set("PygmentsStyle", "bw")
-	viper.Set("PygmentsUseClasses", false)
+	viper.Set("pygmentsStyle", "bw")
+	viper.Set("pygmentsUseClasses", false)
 
 	for i, this := range []struct {
 		in, expected string
@@ -97,9 +107,8 @@ void do();
 			"(?s)^\n<div class=\"highlight\" style=\"background: #f0f0f0\"><pre style=\"line-height: 125%\">.*?void</span>.*?do</span>.*?().*?</pre></div>\n$",
 		},
 	} {
-		templ := tpl.New()
 		p, _ := pageFromString(simplePage, "simple.md")
-		output, err := HandleShortcodes(this.in, p, templ)
+		output, err := HandleShortcodes(this.in, p)
 
 		if err != nil {
 			t.Fatalf("[%d] Handle shortcode error", i)
@@ -112,7 +121,7 @@ void do();
 		}
 
 		if !matched {
-			t.Errorf("[%d] Hightlight mismatch, got %s\n", i, output)
+			t.Errorf("[%d] unexpected rendering, got %s\n", i, output)
 		}
 	}
 }
@@ -141,9 +150,8 @@ func TestShortcodeFigure(t *testing.T) {
 			"(?s)^\n<figure >.*?<img src=\"/img/hugo-logo.png\" />.*?<figcaption>.*?<p>.*?<a href=\"/img/hugo-logo.png\">.*?Hugo logo.*?</a>.*?</p>.*?</figcaption>.*?</figure>\n$",
 		},
 	} {
-		templ := tpl.New()
 		p, _ := pageFromString(simplePage, "simple.md")
-		output, err := HandleShortcodes(this.in, p, templ)
+		output, err := HandleShortcodes(this.in, p)
 
 		matched, err := regexp.MatchString(this.expected, output)
 
@@ -152,7 +160,7 @@ func TestShortcodeFigure(t *testing.T) {
 		}
 
 		if !matched {
-			t.Errorf("[%d] Hightlight mismatch, got %s\n", i, output)
+			t.Errorf("[%d] unexpected rendering, got %s\n", i, output)
 		}
 	}
 }
@@ -166,9 +174,8 @@ func TestShortcodeSpeakerdeck(t *testing.T) {
 			"(?s)^<script async class='speakerdeck-embed' data-id='4e8126e72d853c0060001f97'.*?>.*?</script>$",
 		},
 	} {
-		templ := tpl.New()
 		p, _ := pageFromString(simplePage, "simple.md")
-		output, err := HandleShortcodes(this.in, p, templ)
+		output, err := HandleShortcodes(this.in, p)
 
 		matched, err := regexp.MatchString(this.expected, output)
 
@@ -177,7 +184,7 @@ func TestShortcodeSpeakerdeck(t *testing.T) {
 		}
 
 		if !matched {
-			t.Errorf("[%d] Hightlight mismatch, got %s\n", i, output)
+			t.Errorf("[%d] unexpected rendering, got %s\n", i, output)
 		}
 	}
 }
@@ -201,9 +208,8 @@ func TestShortcodeYoutube(t *testing.T) {
 			"(?s)^\n<div class=\"video\">.*?<iframe src=\"//www.youtube.com/embed/w7Ft2ymGmfc\\?autoplay=1\".*?allowfullscreen frameborder=\"0\">.*?</iframe>.*?</div>$",
 		},
 	} {
-		templ := tpl.New()
 		p, _ := pageFromString(simplePage, "simple.md")
-		output, err := HandleShortcodes(this.in, p, templ)
+		output, err := HandleShortcodes(this.in, p)
 
 		matched, err := regexp.MatchString(this.expected, output)
 
@@ -212,7 +218,7 @@ func TestShortcodeYoutube(t *testing.T) {
 		}
 
 		if !matched {
-			t.Errorf("[%d] Hightlight mismatch, got %s\n", i, output)
+			t.Errorf("[%d] unexpected rendering, got %s\n", i, output)
 		}
 	}
 }
@@ -236,9 +242,8 @@ func TestShortcodeVimeo(t *testing.T) {
 			"(?s)^<div class=\"video\">.*?<iframe src=\"//player.vimeo.com/video/146022717\" webkitallowfullscreen mozallowfullscreen allowfullscreen>.*?</iframe>.*?</div>$",
 		},
 	} {
-		templ := tpl.New()
 		p, _ := pageFromString(simplePage, "simple.md")
-		output, err := HandleShortcodes(this.in, p, templ)
+		output, err := HandleShortcodes(this.in, p)
 
 		matched, err := regexp.MatchString(this.expected, output)
 
@@ -247,7 +252,7 @@ func TestShortcodeVimeo(t *testing.T) {
 		}
 
 		if !matched {
-			t.Errorf("[%d] Hightlight mismatch, got %s\n", i, output)
+			t.Errorf("[%d] unexpected rendering, got %s\n", i, output)
 		}
 	}
 }
@@ -265,9 +270,8 @@ func TestShortcodeGist(t *testing.T) {
 			"(?s)^<script src=\"//gist.github.com/spf13/7896402.js\\?file=img.html\"></script>$",
 		},
 	} {
-		templ := tpl.New()
 		p, _ := pageFromString(simplePage, "simple.md")
-		output, err := HandleShortcodes(this.in, p, templ)
+		output, err := HandleShortcodes(this.in, p)
 
 		matched, err := regexp.MatchString(this.expected, output)
 
@@ -276,29 +280,42 @@ func TestShortcodeGist(t *testing.T) {
 		}
 
 		if !matched {
-			t.Errorf("[%d] Hightlight mismatch, got %s\n", i, output)
+			t.Errorf("[%d] unexpected rendering, got %s\n", i, output)
 		}
 	}
 }
 
 func TestShortcodeTweet(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping Twitter test in short mode.")
-	}
-
 	for i, this := range []struct {
-		in, expected string
+		in, resp, expected string
 	}{
 		{
 			`{{< tweet 666616452582129664 >}}`,
-			"(?s)^<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Hugo 0.15 will have 30%\\+ faster render times thanks to this commit <a href=\"https://t.co/FfzhM8bNhT\">https://t.co/FfzhM8bNhT</a>  <a href=\"https://twitter.com/hashtag/gohugo\\?src=hash\">#gohugo</a> <a href=\"https://twitter.com/hashtag/golang\\?src=hash\">#golang</a> <a href=\"https://t.co/ITbMNU2BUf\">https://t.co/ITbMNU2BUf</a></p>&mdash; Steve Francia \\(@spf13\\) <a href=\"https://twitter.com/spf13/status/666616452582129664\">November 17, 2015</a></blockquote>.*?<script async src=\"//platform.twitter.com/widgets.js\" charset=\"utf-8\"></script>$",
+			`{"url":"https:\/\/twitter.com\/spf13\/status\/666616452582129664","author_name":"Steve Francia","author_url":"https:\/\/twitter.com\/spf13","html":"\u003Cblockquote class=\"twitter-tweet\"\u003E\u003Cp lang=\"en\" dir=\"ltr\"\u003EHugo 0.15 will have 30%+ faster render times thanks to this commit \u003Ca href=\"https:\/\/t.co\/FfzhM8bNhT\"\u003Ehttps:\/\/t.co\/FfzhM8bNhT\u003C\/a\u003E  \u003Ca href=\"https:\/\/twitter.com\/hashtag\/gohugo?src=hash\"\u003E#gohugo\u003C\/a\u003E \u003Ca href=\"https:\/\/twitter.com\/hashtag\/golang?src=hash\"\u003E#golang\u003C\/a\u003E \u003Ca href=\"https:\/\/t.co\/ITbMNU2BUf\"\u003Ehttps:\/\/t.co\/ITbMNU2BUf\u003C\/a\u003E\u003C\/p\u003E&mdash; Steve Francia (@spf13) \u003Ca href=\"https:\/\/twitter.com\/spf13\/status\/666616452582129664\"\u003ENovember 17, 2015\u003C\/a\u003E\u003C\/blockquote\u003E\n\u003Cscript async src=\"\/\/platform.twitter.com\/widgets.js\" charset=\"utf-8\"\u003E\u003C\/script\u003E","width":550,"height":null,"type":"rich","cache_age":"3153600000","provider_name":"Twitter","provider_url":"https:\/\/twitter.com","version":"1.0"}`,
+			`(?s)^<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Hugo 0.15 will have 30%. faster render times thanks to this commit <a href="https://t.co/FfzhM8bNhT">https://t.co/FfzhM8bNhT</a>  <a href="https://twitter.com/hashtag/gohugo.src=hash">#gohugo</a> <a href="https://twitter.com/hashtag/golang.src=hash">#golang</a> <a href="https://t.co/ITbMNU2BUf">https://t.co/ITbMNU2BUf</a></p>&mdash; Steve Francia .@spf13. <a href="https://twitter.com/spf13/status/666616452582129664">November 17, 2015</a></blockquote>.*?<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>$`,
 		},
 	} {
-		templ := tpl.New()
-		p, _ := pageFromString(simplePage, "simple.md")
-		cacheFileID := viper.GetString("CacheDir") + url.QueryEscape("https://api.twitter.com/1/statuses/oembed.json?id=666616452582129664")
+		// overload getJSON to return mock API response from Twitter
+		tweetFuncMap := template.FuncMap{
+			"getJSON": func(urlParts ...string) interface{} {
+				var v interface{}
+				err := json.Unmarshal([]byte(this.resp), &v)
+				if err != nil {
+					t.Fatalf("[%d] unexpected error in json.Unmarshal: %s", i, err)
+					return err
+				}
+				return v
+			},
+		}
+
+		p, _ := pageFromString(simplePage, "simple.md", func(templ tpl.Template) error {
+			templ.Funcs(tweetFuncMap)
+			return nil
+		})
+
+		cacheFileID := viper.GetString("cacheDir") + url.QueryEscape("https://api.twitter.com/1/statuses/oembed.json?id=666616452582129664")
 		defer os.Remove(cacheFileID)
-		output, err := HandleShortcodes(this.in, p, templ)
+		output, err := HandleShortcodes(this.in, p)
 
 		matched, err := regexp.MatchString(this.expected, output)
 
@@ -307,7 +324,58 @@ func TestShortcodeTweet(t *testing.T) {
 		}
 
 		if !matched {
-			t.Errorf("[%d] Hightlight mismatch, got %s\n", i, output)
+			t.Errorf("[%d] unexpected rendering, got %s\n", i, output)
+		}
+	}
+}
+
+func TestShortcodeInstagram(t *testing.T) {
+	for i, this := range []struct {
+		in, hidecaption, resp, expected string
+	}{
+		{
+			`{{< instagram BMokmydjG-M >}}`,
+			`0`,
+			`{"provider_url": "https://www.instagram.com", "media_id": "1380514280986406796_25025320", "author_name": "instagram", "height": null, "thumbnail_url": "https://scontent-amt2-1.cdninstagram.com/t51.2885-15/s640x640/sh0.08/e35/15048135_1880160212214218_7827880881132929024_n.jpg?ig_cache_key=MTM4MDUxNDI4MDk4NjQwNjc5Ng%3D%3D.2", "thumbnail_width": 640, "thumbnail_height": 640, "provider_name": "Instagram", "title": "Today, we\u2019re introducing a few new tools to help you make your story even more fun: Boomerang and mentions. We\u2019re also starting to test links inside some stories.\nBoomerang lets you turn everyday moments into something fun and unexpected. Now you can easily take a Boomerang right inside Instagram. Swipe right from your feed to open the stories camera. A new format picker under the record button lets you select \u201cBoomerang\u201d mode.\nYou can also now share who you\u2019re with or who you\u2019re thinking of by mentioning them in your story. When you add text to your story, type \u201c@\u201d followed by a username and select the person you\u2019d like to mention. Their username will appear underlined in your story. And when someone taps the mention, they'll see a pop-up that takes them to that profile.\nYou may begin to spot \u201cSee More\u201d links at the bottom of some stories. This is a test that lets verified accounts add links so it\u2019s easy to learn more. From your favorite chefs\u2019 recipes to articles from top journalists or concert dates from the musicians you love, tap \u201cSee More\u201d or swipe up to view the link right inside the app.\nTo learn more about today\u2019s updates, check out help.instagram.com.\nThese updates for Instagram Stories are available as part of Instagram version 9.7 available for iOS in the Apple App Store, for Android in Google Play and for Windows 10 in the Windows Store.", "html": "\u003cblockquote class=\"instagram-media\" data-instgrm-captioned data-instgrm-version=\"7\" style=\" background:#FFF; border:0; border-radius:3px; box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15); margin: 1px; max-width:658px; padding:0; width:99.375%; width:-webkit-calc(100% - 2px); width:calc(100% - 2px);\"\u003e\u003cdiv style=\"padding:8px;\"\u003e \u003cdiv style=\" background:#F8F8F8; line-height:0; margin-top:40px; padding:50.0% 0; text-align:center; width:100%;\"\u003e \u003cdiv style=\" background:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAsCAMAAAApWqozAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAAAMUExURczMzPf399fX1+bm5mzY9AMAAADiSURBVDjLvZXbEsMgCES5/P8/t9FuRVCRmU73JWlzosgSIIZURCjo/ad+EQJJB4Hv8BFt+IDpQoCx1wjOSBFhh2XssxEIYn3ulI/6MNReE07UIWJEv8UEOWDS88LY97kqyTliJKKtuYBbruAyVh5wOHiXmpi5we58Ek028czwyuQdLKPG1Bkb4NnM+VeAnfHqn1k4+GPT6uGQcvu2h2OVuIf/gWUFyy8OWEpdyZSa3aVCqpVoVvzZZ2VTnn2wU8qzVjDDetO90GSy9mVLqtgYSy231MxrY6I2gGqjrTY0L8fxCxfCBbhWrsYYAAAAAElFTkSuQmCC); display:block; height:44px; margin:0 auto -44px; position:relative; top:-22px; width:44px;\"\u003e\u003c/div\u003e\u003c/div\u003e \u003cp style=\" margin:8px 0 0 0; padding:0 4px;\"\u003e \u003ca href=\"https://www.instagram.com/p/BMokmydjG-M/\" style=\" color:#000; font-family:Arial,sans-serif; font-size:14px; font-style:normal; font-weight:normal; line-height:17px; text-decoration:none; word-wrap:break-word;\" target=\"_blank\"\u003eToday, we\u2019re introducing a few new tools to help you make your story even more fun: Boomerang and mentions. We\u2019re also starting to test links inside some stories. Boomerang lets you turn everyday moments into something fun and unexpected. Now you can easily take a Boomerang right inside Instagram. Swipe right from your feed to open the stories camera. A new format picker under the record button lets you select \u201cBoomerang\u201d mode. You can also now share who you\u2019re with or who you\u2019re thinking of by mentioning them in your story. When you add text to your story, type \u201c@\u201d followed by a username and select the person you\u2019d like to mention. Their username will appear underlined in your story. And when someone taps the mention, they\u0026#39;ll see a pop-up that takes them to that profile. You may begin to spot \u201cSee More\u201d links at the bottom of some stories. This is a test that lets verified accounts add links so it\u2019s easy to learn more. From your favorite chefs\u2019 recipes to articles from top journalists or concert dates from the musicians you love, tap \u201cSee More\u201d or swipe up to view the link right inside the app. To learn more about today\u2019s updates, check out help.instagram.com. These updates for Instagram Stories are available as part of Instagram version 9.7 available for iOS in the Apple App Store, for Android in Google Play and for Windows 10 in the Windows Store.\u003c/a\u003e\u003c/p\u003e \u003cp style=\" color:#c9c8cd; font-family:Arial,sans-serif; font-size:14px; line-height:17px; margin-bottom:0; margin-top:8px; overflow:hidden; padding:8px 0 7px; text-align:center; text-overflow:ellipsis; white-space:nowrap;\"\u003eA photo posted by Instagram (@instagram) on \u003ctime style=\" font-family:Arial,sans-serif; font-size:14px; line-height:17px;\" datetime=\"2016-11-10T15:02:28+00:00\"\u003eNov 10, 2016 at 7:02am PST\u003c/time\u003e\u003c/p\u003e\u003c/div\u003e\u003c/blockquote\u003e\n\u003cscript async defer src=\"//platform.instagram.com/en_US/embeds.js\"\u003e\u003c/script\u003e", "width": 658, "version": "1.0", "author_url": "https://www.instagram.com/instagram", "author_id": 25025320, "type": "rich"}`,
+			`<blockquote class="instagram-media" data-instgrm-captioned data-instgrm-version="7" style=" background:#FFF; border:0; border-radius:3px; box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15); margin: 1px; max-width:658px; padding:0; width:99.375%; width:-webkit-calc(100% - 2px); width:calc(100% - 2px);"><div style="padding:8px;"> <div style=" background:#F8F8F8; line-height:0; margin-top:40px; padding:50.0% 0; text-align:center; width:100%;"> <div style=" background:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAsCAMAAAApWqozAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAAAMUExURczMzPf399fX1+bm5mzY9AMAAADiSURBVDjLvZXbEsMgCES5/P8/t9FuRVCRmU73JWlzosgSIIZURCjo/ad+EQJJB4Hv8BFt+IDpQoCx1wjOSBFhh2XssxEIYn3ulI/6MNReE07UIWJEv8UEOWDS88LY97kqyTliJKKtuYBbruAyVh5wOHiXmpi5we58Ek028czwyuQdLKPG1Bkb4NnM+VeAnfHqn1k4+GPT6uGQcvu2h2OVuIf/gWUFyy8OWEpdyZSa3aVCqpVoVvzZZ2VTnn2wU8qzVjDDetO90GSy9mVLqtgYSy231MxrY6I2gGqjrTY0L8fxCxfCBbhWrsYYAAAAAElFTkSuQmCC); display:block; height:44px; margin:0 auto -44px; position:relative; top:-22px; width:44px;"></div></div> <p style=" margin:8px 0 0 0; padding:0 4px;"> <a href="https://www.instagram.com/p/BMokmydjG-M/" style=" color:#000; font-family:Arial,sans-serif; font-size:14px; font-style:normal; font-weight:normal; line-height:17px; text-decoration:none; word-wrap:break-word;" target="_blank">Today, we’re introducing a few new tools to help you make your story even more fun: Boomerang and mentions. We’re also starting to test links inside some stories. Boomerang lets you turn everyday moments into something fun and unexpected. Now you can easily take a Boomerang right inside Instagram. Swipe right from your feed to open the stories camera. A new format picker under the record button lets you select “Boomerang” mode. You can also now share who you’re with or who you’re thinking of by mentioning them in your story. When you add text to your story, type “@” followed by a username and select the person you’d like to mention. Their username will appear underlined in your story. And when someone taps the mention, they&#39;ll see a pop-up that takes them to that profile. You may begin to spot “See More” links at the bottom of some stories. This is a test that lets verified accounts add links so it’s easy to learn more. From your favorite chefs’ recipes to articles from top journalists or concert dates from the musicians you love, tap “See More” or swipe up to view the link right inside the app. To learn more about today’s updates, check out help.instagram.com. These updates for Instagram Stories are available as part of Instagram version 9.7 available for iOS in the Apple App Store, for Android in Google Play and for Windows 10 in the Windows Store.</a></p> <p style=" color:#c9c8cd; font-family:Arial,sans-serif; font-size:14px; line-height:17px; margin-bottom:0; margin-top:8px; overflow:hidden; padding:8px 0 7px; text-align:center; text-overflow:ellipsis; white-space:nowrap;">A photo posted by Instagram (@instagram) on <time style=" font-family:Arial,sans-serif; font-size:14px; line-height:17px;" datetime="2016-11-10T15:02:28+00:00">Nov 10, 2016 at 7:02am PST</time></p></div></blockquote>
+<script async defer src="//platform.instagram.com/en_US/embeds.js"></script>`,
+		},
+		{
+			`{{< instagram BMokmydjG-M hidecaption >}}`,
+			`1`,
+			`{"provider_url": "https://www.instagram.com", "media_id": "1380514280986406796_25025320", "author_name": "instagram", "height": null, "thumbnail_url": "https://scontent-amt2-1.cdninstagram.com/t51.2885-15/s640x640/sh0.08/e35/15048135_1880160212214218_7827880881132929024_n.jpg?ig_cache_key=MTM4MDUxNDI4MDk4NjQwNjc5Ng%3D%3D.2", "thumbnail_width": 640, "thumbnail_height": 640, "provider_name": "Instagram", "title": "Today, we\u2019re introducing a few new tools to help you make your story even more fun: Boomerang and mentions. We\u2019re also starting to test links inside some stories.\nBoomerang lets you turn everyday moments into something fun and unexpected. Now you can easily take a Boomerang right inside Instagram. Swipe right from your feed to open the stories camera. A new format picker under the record button lets you select \u201cBoomerang\u201d mode.\nYou can also now share who you\u2019re with or who you\u2019re thinking of by mentioning them in your story. When you add text to your story, type \u201c@\u201d followed by a username and select the person you\u2019d like to mention. Their username will appear underlined in your story. And when someone taps the mention, they'll see a pop-up that takes them to that profile.\nYou may begin to spot \u201cSee More\u201d links at the bottom of some stories. This is a test that lets verified accounts add links so it\u2019s easy to learn more. From your favorite chefs\u2019 recipes to articles from top journalists or concert dates from the musicians you love, tap \u201cSee More\u201d or swipe up to view the link right inside the app.\nTo learn more about today\u2019s updates, check out help.instagram.com.\nThese updates for Instagram Stories are available as part of Instagram version 9.7 available for iOS in the Apple App Store, for Android in Google Play and for Windows 10 in the Windows Store.", "html": "\u003cblockquote class=\"instagram-media\" data-instgrm-version=\"7\" style=\" background:#FFF; border:0; border-radius:3px; box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15); margin: 1px; max-width:658px; padding:0; width:99.375%; width:-webkit-calc(100% - 2px); width:calc(100% - 2px);\"\u003e\u003cdiv style=\"padding:8px;\"\u003e \u003cdiv style=\" background:#F8F8F8; line-height:0; margin-top:40px; padding:50.0% 0; text-align:center; width:100%;\"\u003e \u003cdiv style=\" background:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAsCAMAAAApWqozAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAAAMUExURczMzPf399fX1+bm5mzY9AMAAADiSURBVDjLvZXbEsMgCES5/P8/t9FuRVCRmU73JWlzosgSIIZURCjo/ad+EQJJB4Hv8BFt+IDpQoCx1wjOSBFhh2XssxEIYn3ulI/6MNReE07UIWJEv8UEOWDS88LY97kqyTliJKKtuYBbruAyVh5wOHiXmpi5we58Ek028czwyuQdLKPG1Bkb4NnM+VeAnfHqn1k4+GPT6uGQcvu2h2OVuIf/gWUFyy8OWEpdyZSa3aVCqpVoVvzZZ2VTnn2wU8qzVjDDetO90GSy9mVLqtgYSy231MxrY6I2gGqjrTY0L8fxCxfCBbhWrsYYAAAAAElFTkSuQmCC); display:block; height:44px; margin:0 auto -44px; position:relative; top:-22px; width:44px;\"\u003e\u003c/div\u003e\u003c/div\u003e\u003cp style=\" color:#c9c8cd; font-family:Arial,sans-serif; font-size:14px; line-height:17px; margin-bottom:0; margin-top:8px; overflow:hidden; padding:8px 0 7px; text-align:center; text-overflow:ellipsis; white-space:nowrap;\"\u003e\u003ca href=\"https://www.instagram.com/p/BMokmydjG-M/\" style=\" color:#c9c8cd; font-family:Arial,sans-serif; font-size:14px; font-style:normal; font-weight:normal; line-height:17px; text-decoration:none;\" target=\"_blank\"\u003eA photo posted by Instagram (@instagram)\u003c/a\u003e on \u003ctime style=\" font-family:Arial,sans-serif; font-size:14px; line-height:17px;\" datetime=\"2016-11-10T15:02:28+00:00\"\u003eNov 10, 2016 at 7:02am PST\u003c/time\u003e\u003c/p\u003e\u003c/div\u003e\u003c/blockquote\u003e\n\u003cscript async defer src=\"//platform.instagram.com/en_US/embeds.js\"\u003e\u003c/script\u003e", "width": 658, "version": "1.0", "author_url": "https://www.instagram.com/instagram", "author_id": 25025320, "type": "rich"}`,
+			`<blockquote class="instagram-media" data-instgrm-version="7" style=" background:#FFF; border:0; border-radius:3px; box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15); margin: 1px; max-width:658px; padding:0; width:99.375%; width:-webkit-calc(100% - 2px); width:calc(100% - 2px);"><div style="padding:8px;"> <div style=" background:#F8F8F8; line-height:0; margin-top:40px; padding:50.0% 0; text-align:center; width:100%;"> <div style=" background:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAsCAMAAAApWqozAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAAAMUExURczMzPf399fX1+bm5mzY9AMAAADiSURBVDjLvZXbEsMgCES5/P8/t9FuRVCRmU73JWlzosgSIIZURCjo/ad+EQJJB4Hv8BFt+IDpQoCx1wjOSBFhh2XssxEIYn3ulI/6MNReE07UIWJEv8UEOWDS88LY97kqyTliJKKtuYBbruAyVh5wOHiXmpi5we58Ek028czwyuQdLKPG1Bkb4NnM+VeAnfHqn1k4+GPT6uGQcvu2h2OVuIf/gWUFyy8OWEpdyZSa3aVCqpVoVvzZZ2VTnn2wU8qzVjDDetO90GSy9mVLqtgYSy231MxrY6I2gGqjrTY0L8fxCxfCBbhWrsYYAAAAAElFTkSuQmCC); display:block; height:44px; margin:0 auto -44px; position:relative; top:-22px; width:44px;"></div></div><p style=" color:#c9c8cd; font-family:Arial,sans-serif; font-size:14px; line-height:17px; margin-bottom:0; margin-top:8px; overflow:hidden; padding:8px 0 7px; text-align:center; text-overflow:ellipsis; white-space:nowrap;"><a href="https://www.instagram.com/p/BMokmydjG-M/" style=" color:#c9c8cd; font-family:Arial,sans-serif; font-size:14px; font-style:normal; font-weight:normal; line-height:17px; text-decoration:none;" target="_blank">A photo posted by Instagram (@instagram)</a> on <time style=" font-family:Arial,sans-serif; font-size:14px; line-height:17px;" datetime="2016-11-10T15:02:28+00:00">Nov 10, 2016 at 7:02am PST</time></p></div></blockquote>
+<script async defer src="//platform.instagram.com/en_US/embeds.js"></script>`,
+		},
+	} {
+		// overload getJSON to return mock API response from Instagram
+		instagramFuncMap := template.FuncMap{
+			"getJSON": func(urlParts ...string) interface{} {
+				var v interface{}
+				err := json.Unmarshal([]byte(this.resp), &v)
+				if err != nil {
+					t.Fatalf("[%d] unexpected error in json.Unmarshal: %s", i, err)
+					return err
+				}
+				return v
+			},
+		}
+
+		p, _ := pageFromString(simplePage, "simple.md", func(templ tpl.Template) error {
+			templ.Funcs(instagramFuncMap)
+			return nil
+		})
+
+		cacheFileID := viper.GetString("cacheDir") + url.QueryEscape("https://api.instagram.com/oembed/?url=https://instagram.com/p/BMokmydjG-M/&hidecaption="+this.hidecaption)
+		defer os.Remove(cacheFileID)
+		output, err := HandleShortcodes(this.in, p)
+
+		if err != nil {
+			t.Fatalf("[%d] Failed to render shortcodes", i)
+		}
+
+		if this.expected != output {
+			t.Errorf("[%d] unexpected rendering, got %s expected: %s", i, output, this.expected)
 		}
 	}
 }

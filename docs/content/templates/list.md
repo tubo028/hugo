@@ -46,6 +46,7 @@ A Section will be rendered at /`SECTION`/ (e.g.&nbsp;http://spf13.com/project/)
 * /themes/`THEME`/layouts/\_default/section.html
 * /themes/`THEME`/layouts/\_default/list.html
 
+Note that a sections list page can also have a content file with frontmatter,  see [Source Organization]({{< relref "overview/source-directory.md#content-for-home-page-and-other-list-pages" >}}).
 
 ### Taxonomy Lists
 
@@ -57,6 +58,8 @@ A Taxonomy will be rendered at /`PLURAL`/`TERM`/ (e.g.&nbsp;http://spf13.com/top
 * /themes/`THEME`/layouts/taxonomy/`SINGULAR`.html
 * /themes/`THEME`/layouts/\_default/taxonomy.html
 * /themes/`THEME`/layouts/\_default/list.html
+
+Note that a taxonomy list page can also have a content file with frontmatter,  see [Source Organization]({{< relref "overview/source-directory.md#content-for-home-page-and-other-list-pages" >}}).
 
 ### Section RSS
 
@@ -93,7 +96,7 @@ can have different RSS files for each section and taxonomy.
 
 ## Variables
 
-List pages are of the type "node" and have all the [node variables](/templates/variables/)
+A list page is a `Page` and have all the [page variables](/templates/variables/)
 and [site variables](/templates/variables/) available to use in the templates.
 
 Taxonomy pages will additionally have:
